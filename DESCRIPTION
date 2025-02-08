@@ -1,0 +1,11 @@
+Package: addamasartus
+Title: S4 Interface to the TESIII File Format
+Version: 0.0.0.9000
+Authors@R: 
+    person("Bryce", "Carson", , "bryce.a.carson@gmail.com", role = c("aut", "cre"),
+           comment = c(ORCID = "0000-0002-1362-2998"))
+Description: An Object Oriented, S4-based interface to The Elder Scrolls III file format.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.2
