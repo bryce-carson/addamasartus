@@ -4,7 +4,6 @@ library(visNetwork)
 library(jsTreeR)
 library(methods)
 library(shinyjs)
-library(shinythemes)
 
 floating_card <- function(Id, ..., .title = toupper(Id)) {
   stopifnot(!missing(Id))
@@ -55,13 +54,13 @@ s4_to_tree <- function(obj_list) {
         list(text = paste(slot, ":", slot_value))
       }
     })
-    
+
     list(
       text = name,
       children = children
     )
   })
-  
+
   nodes
 }
 
@@ -69,21 +68,21 @@ s4_to_graph <- function(obj_list) {
   nodes <- data.frame()
   edges <- data.frame()
   node_id <- 1
-  
+
   for (name in names(obj_list)) {
     obj <- obj_list[[name]]
     class_name <- class(obj)
-    
+
     main_node <- data.frame(
       id = node_id,
       label = paste(name, "\n(", class_name, ")"),
       group = "main"
     )
     nodes <- rbind(nodes, main_node)
-    
+
     parent_id <- node_id
     node_id <- node_id + 1
-    
+
     slots <- slotNames(obj)
     for (slot in slots) {
       slot_value <- slot(obj, slot)
@@ -114,11 +113,13 @@ s4_to_graph <- function(obj_list) {
       }
     }
   }
-  
+
   list(nodes = nodes, edges = edges)
 }
 
 ui <- page_fillable(
+  useShinyjs(),  # Enable shinyjs
+
   tags$head(
     tags$style(HTML("
       .floating-container {
@@ -131,6 +132,9 @@ ui <- page_fillable(
         min-width: 200px;
         min-height: 100px;
         touch-action: none;
+        left: 20px;
+        top: 20px;
+        display: none;  /* Initially hidden */
       }
       .floating-container .card-title {
         cursor: move;
@@ -141,6 +145,12 @@ ui <- page_fillable(
       }
       .floating-container.dragging {
         opacity: 0.8;
+      }
+      #reset_button {
+        position: fixed;
+        top: 10px;
+        right: 10px;
+        z-index: 1000;
       }
     ")),
     tags$script(HTML("
@@ -153,17 +163,44 @@ ui <- page_fillable(
         let xOffset = 0;
         let yOffset = 0;
         let dragItem = null;
+        let maxZIndex = 900;
+
+        function bringToFront(container) {
+          maxZIndex += 1;
+          container.style.zIndex = maxZIndex;
+        }
+
+        window.cascadeCards = function() {
+          const containers = document.querySelectorAll('.floating-container:not([style*=\"display: none\"]');
+          containers.forEach((container, index) => {
+            container.style.transform = `translate3d(${index * 20}px, ${index * 20}px, 0)`;
+            container.dataset.xOffset = index * 20;
+            container.dataset.yOffset = index * 20;
+            container.style.zIndex = 900 + index;
+          });
+          maxZIndex = 900 + containers.length;
+        };
+
+        setTimeout(cascadeCards, 100);
+
+        document.addEventListener('mousedown', function(e) {
+          const container = e.target.closest('.floating-container');
+          if (container) {
+            bringToFront(container);
+          }
+        });
 
         function dragStart(e) {
           if (e.target.closest('.card-title')) {
             dragItem = e.target.closest('.floating-container');
-            
+            bringToFront(dragItem);
+
             if (e.type === 'touchstart') {
-              initialX = e.touches[0].clientX - xOffset;
-              initialY = e.touches[0].clientY - yOffset;
+              initialX = e.touches[0].clientX - (parseFloat(dragItem.dataset.xOffset) || 0);
+              initialY = e.touches[0].clientY - (parseFloat(dragItem.dataset.yOffset) || 0);
             } else {
-              initialX = e.clientX - xOffset;
-              initialY = e.clientY - yOffset;
+              initialX = e.clientX - (parseFloat(dragItem.dataset.xOffset) || 0);
+              initialY = e.clientY - (parseFloat(dragItem.dataset.yOffset) || 0);
             }
 
             if (dragItem) {
@@ -185,9 +222,8 @@ ui <- page_fillable(
               currentY = e.clientY - initialY;
             }
 
-            xOffset = currentX;
-            yOffset = currentY;
-
+            dragItem.dataset.xOffset = currentX;
+            dragItem.dataset.yOffset = currentY;
             setTranslate(currentX, currentY, dragItem);
           }
         }
@@ -215,57 +251,71 @@ ui <- page_fillable(
       });
     "))
   ),
-  
-  # Main content area
+
+  actionButton("reset_button", "Reset Card Positions", class = "btn-primary"),
+
   div(
     style = "position: relative; height: 100vh;",
-    
+
+    # Toggle controls card (always present)
     floating_card("toggle_container",
-                  input_switch("main_view_toggle", "View as Graph?", value = TRUE),
-                  tags$hr(),
-                  checkboxGroupInput("float_toggles", "Show Floating Containers:",
-                                   choices = c("Info" = "info",
-                                             "Controls" = "controls",
-                                             "Details" = "details"))),
-    
-    # Floating containers
-    uiOutput("floating_containers"),
-    
+                 input_switch("main_view_toggle", "View as Graph?", value = TRUE),
+                 tags$hr(),
+                 checkboxGroupInput("float_toggles", "Show Floating Containers:",
+                                  choices = c("Info" = "info",
+                                            "Controls" = "controls",
+                                            "Details" = "details"))),
+
+    # Individual floating cards (initially hidden)
+    floating_card("info_container", "An informational container."),
+    floating_card("controls_container", "A container for controls."),
+    floating_card("details_container", "A container for details."),
+
     # Main view area
     uiOutput("main_view")
   )
 )
 
 server <- function(input, output, session) {
-  ## Floating containers
-  output$floating_containers <- renderUI({
-    containers <- list()
-    
+  # Show/hide cards based on checkboxes
+  observe({
+    # Info card
     if ("info" %in% input$float_toggles) {
-      containers[[1]] <- floating_card("info_container", "An informational container.")
+      shinyjs::show("info_container")
+    } else {
+      shinyjs::hide("info_container")
     }
-    
+
+    # Controls card
     if ("controls" %in% input$float_toggles) {
-      containers[[2]] <- floating_card("controls_container", "A container for controls.")
+      shinyjs::show("controls_container")
+    } else {
+      shinyjs::hide("controls_container")
     }
-    
+
+    # Details card
     if ("details" %in% input$float_toggles) {
-      containers[[3]] <- floating_card("details_container", "A container for details.")
+      shinyjs::show("details_container")
+    } else {
+      shinyjs::hide("details_container")
     }
-    
+
+    # Trigger cascade after showing/hiding cards
+    runjs("setTimeout(window.cascadeCards, 0);")
+
     div(
       id = "floating_containers_wrapper",
       do.call(tagList, containers)
     )
   })
-  
+
   ## Main view output
   output$main_view <- renderUI({
     if (input$main_view_toggle) {
       ## Render graph
       output$graph_view <- renderVisNetwork({
         graph_data <- s4_to_graph(sample_data)
-        
+
         visNetwork(graph_data$nodes, graph_data$edges) %>%
           visGroups(groupname = "main", color = "#ff9999") %>%
           visGroups(groupname = "slot", color = "#99ff99") %>%
@@ -273,7 +323,7 @@ server <- function(input, output, session) {
           visLayout(hierarchical = TRUE) %>%
           visOptions(highlightNearest = list(enabled = TRUE, hover = TRUE))
       })
-      
+
       ## Graph view
       visNetworkOutput("graph_view", height = "100vh")
     } else {
@@ -281,7 +331,7 @@ server <- function(input, output, session) {
       output$tree_view <- renderJstree({
         jstree(s4_to_tree(sample_data), checkboxes = FALSE)
       })
-      
+
       ## Tree view
       jstreeOutput("tree_view", height = "100vh")
     }
