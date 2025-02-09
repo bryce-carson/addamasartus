@@ -3,10 +3,11 @@ library(bslib)
 library(visNetwork)
 library(jsTreeR)
 library(methods)
+library(shinyjs)
+library(shinythemes)
 
 floating_card <- function(Id, ..., .title = toupper(Id)) {
-  stopifnot(!missing(Id)) # Id is required!
-  
+  stopifnot(!missing(Id))
   return(
     card(
       h4(class = "card-title", .title),
