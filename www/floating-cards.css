@@ -1,0 +1,17 @@
+div#overlay {
+    position: absolute;
+    z-index: 99999;
+}
+.floating-container {
+    position: fixed;
+    z-index: 900;
+    touch-action: none;
+    left: 20px;
+    top: 20px;
+}
+.floating-container-title {
+    cursor: move;
+    user-select: none;
+    left: 20px;
+    top: 20px;
+}

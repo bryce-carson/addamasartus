@@ -1,0 +1,120 @@
+* PROMPTS for S4 class
+** First prompt
+Create an S4 class for modelling information and methods related to a
+record-based binary file.
+
+The binary file is made up of records. Every record has a thirty-two bit header,
+with four items of four bytes each. The first item is a non-null terminated
+string of four characters (each character one unsigned byte long); this first
+item utilizes four bytes, and it is the `name` field of the record class. The
+next three items are each four byte integers, so-called `uint32`; the first of
+these three is a `size` field of the record class. The next two items of the
+header are both four-byte long integers (`uint32`) which are used as flags; call
+these `flag1` and `flag2`.
+
+Don't use a "privacy pattern": use public fields only, so no getters or setters
+for these at first.
+
+Every record in the binary file has a list of subrecords, and this list of
+subrecords is `size` bytes long.
+
+Every record should also have an `offset` field, which represents the offset (in
+bytes) into the file at which the record begins.
+
+The constructor method for Records should be lazy, seeking past the subrecord
+data when first reading a record in the binary file; a `readRecord` method
+should utilize the instance's `offset` file pointer to read the subrecord data
+when it is needed.
+
+** Second Prompt
+The Subrecords are similar to Records, but they do not have flags. Rather than
+containing Subrecords, subrecords contain raw data. Rather than Records
+containing raw data, they contain a list of Subrecords.
+
+** Third prompt
+Great.
+
+Next we need a "ESx" class which has a list of records! The ESx class should
+have an fs::path to the real file it points to; when the helper function (the
+"initialize" method) is called it will create a connection to the file provided
+to the helper function (the "constructor").
+
+The ESx class needs a method to track the versioning of the file it represents,
+so it should have a field which will contain the "SHA-256 sum" of the file at
+the path ESx.path for this instance.
+
+** Fourth prompt
+Wonderful. Modify the following quotation to ensure that the four-byte test_read
+conforms to the ASCII characters "TES3". If it doesn't then this isn't an ESx
+file, so stop reading.
+
+#+begin_example R
+# Try to read 4 bytes (for record name)
+test_read <- try(readBin(con, "raw", n = 4), silent = TRUE)
+#+end_example
+
+* PROMPTS for Shiny app
+
+* Testing
+#+begin_src R
+  cyberbak <- "~/src/XBOX/ogxboxBackups/Cyber BACKUP.ess"
+  fcon <- file(cyberbak, open = "rb", raw = TRUE) # binary file connection
+
+  library(openssl)
+  sha256(fcon)
+#+end_src
+
+* Reflection to simplify Shiny programming
+Where the selectInput has the choices c("All", "CELL", "NPC_", "CONT", "WEAP"),
+would it be relatively easy to use reflection in the S4 OOP system to list all
+of the defined class types of a particular nature (TES3 records), rather than
+listing these class names manually?
+
+#+begin_quote
+Yes, you can use R's S4 reflection capabilities to dynamically discover all
+subclasses of a base class. Here's how we could modify the code to automatically
+populate the record types:
+
+First, we'd need to establish a proper class hierarchy by creating a base
+virtual class for TES3 records:
+#+end_quote
+
+#+begin_src R
+  ## Create a virtual base class for all TES3 records
+  setClass("TES3RecordBase",
+           slots = list(
+             type = "character",
+             size = "numeric",
+             data = "raw"
+           ),
+           contains = "VIRTUAL")
+
+  ## Make TES3Record inherit from TES3RecordBase
+  setClass("TES3Record", contains = "TES3RecordBase")
+
+  ## Create specific record types
+  setClass("TES3CELLRecord", contains = "TES3RecordBase")
+  setClass("TES3NPCRecord", contains = "TES3RecordBase")
+  ## etc...
+#+end_src
+
+#+begin_quote
+Then in the UI, replace the hardcoded choices with:
+#+end_quote
+
+#+begin_src R
+  selectInput("record_type", "Filter Record Type",
+              choices = getRecordTypes())
+#+end_src
+
+#+begin_quote
+This approach would automatically pick up any new record types you add to the
+system, as long as they properly inherit from TES3RecordBase. It's a more
+maintainable approach as you won't need to manually update the list of choices
+when adding new record types.
+
+Note that in the actual TES3 format implementation, you might want to include
+metadata about the four-character record type codes (like "CELL", "NPC_", etc.)
+in the class definitions, perhaps through class attributes or slots, so you can
+map between the S4 class names and the actual record types in the file format.
+#+end_quote
