@@ -1,13 +1,13 @@
 ## First require necessary packages
 library(fs)
-library(openssl)  # for sha256 hashing
+library(openssl) # for sha256 hashing
 
 ## ESx class definition
 setClass("ESx",
          slots = list(
-           path = "fs_path",     # Path to the binary file
-           records = "list",     # List of Record objects
-           sha256sum = "hash"    # SHA-256 hash of the file
+           path = "fs_path", # Path to the binary file
+           records = "list", # List of Record objects
+           sha256sum = "hash" # SHA-256 hash of the file
          ),
          prototype = list(
            path = fs::path(),
@@ -16,6 +16,7 @@ setClass("ESx",
          ))
 
 ## Initialize method for ESx
+setGeneric("initialize", function(object) standardGeneric("initialize"))
 setMethod("initialize", "ESx",
           function(.Object, filepath, ...) {
             ## Validate and convert the file path
@@ -63,6 +64,8 @@ setMethod("initialize", "ESx",
             .Object
           })
 
+ESx <- \(path) initialize(new("ESx"), filepath = path)
+
 ## Method to get a record by name
 setGeneric("getRecord", function(object, name) standardGeneric("getRecord"))
 
@@ -93,6 +96,7 @@ setMethod("verifyChecksum", "ESx",
 ## record <- getRecord(esx_file, "HEDR")
 ## is_unchanged <- verifyChecksum(esx_file)
 
+setGeneric("verifyRecordCount", function(object) standardGeneric("verifyRecordCount"))
 setMethod("verifyRecordCount", "ESx",
           function(object) {
             ## Find index of TES3 record

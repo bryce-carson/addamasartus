@@ -28,6 +28,5 @@ createSimpleRecord <- function(name, flags = c(0, 0), subrecords = list()) {
 }
 
 ## Example usage for composition-based records
-
 tes3Record <- createSimpleRecord("TES3", data = list(Subrecord("HEDR", list())))
 gmstRecord <- createSimpleRecord("GMST", data = list(Subrecord("NAME", list("GameSettingID"))))

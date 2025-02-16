@@ -118,3 +118,15 @@ metadata about the four-character record type codes (like "CELL", "NPC_", etc.)
 in the class definitions, perhaps through class attributes or slots, so you can
 map between the S4 class names and the actual record types in the file format.
 #+end_quote
+
+* NexusMods Personal API key
+You can't have mine, but you can put yours in this file:
+${ADDAMASARTUS}/api.key. That file is ignored globally (in any clone of the
+software). I use this myself, and you'll notice my `api.key` file has never been
+included in the repository, nor will yours. Check the `.gitignore` file for more
+information.
+
+This key is used to query Nexus Mods for information related to mod updates,
+compatibility, dependencies, etc.
+
+Use the new {nexusmods} R package (that I wrote) for such features.
