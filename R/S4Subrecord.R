@@ -1,50 +1,52 @@
 ## Define Subrecord class first
 setClass("Subrecord",
          slots = list(
-           ## test
            name = "character",    # 4-byte string
            size = "numeric",      # uint32
-           offset = "numeric",    # file offset where subrecord begins
-           data = "raw"           # raw data content
+           data = "list",
+
+           offset = "numeric"     # file offset where subrecord begins
          ),
          prototype = list(
-           name = "",
+           name = "NULL",
            size = 0,
-           offset = 0,
-           data = raw(0)
+           data = list(),
+
+           offset = 0
          ))
 
-## Initialize method for Subrecord
-setMethod("initialize", "Subrecord",
-          function(.Object, con, offset, ...) {
-            .Object@offset <- offset
+Subrecord <- function(con, offset, lazy = TRUE) {
+  seek(con, sr_offset <- offset)
+  sr_name <- rawToChar(readBin(con, "raw", n = 4))
+  sr_size <- readBin(con, "integer", n = 1, size = 4, endian = "little")
 
-            ## Seek to the subrecord start
-            seek(con, offset)
+  if (lazy) {
+    ## Skip the data for now
+    seek(con, seek(con) + sr_size)
+    new("Subrecord",
+        name = sr_name,
+        size = sr_size,
+        data = NULL,
+        offset = sr_offset)
+  } else {
+    new("Subrecord",
+        name = sr_name,
+        size = sr_size,
+        data = NULL,
+        offset = sr_offset) |>
+      read(con)
+  }
+}
 
-            ## Read the 4-character name
-            name_raw <- readBin(con, "raw", n = 4)
-            .Object@name <- rawToChar(name_raw)
-
-            ## Read the size uint32
-            .Object@size <- readBin(con, "integer", n = 1, size = 4, endian = "little")
-
-            ## Skip the data for now
-            seek(con, seek(con) + .Object@size)
-
-            .Object
-          })
-
-## Method to read subrecord data
-setGeneric("readSubrecord", function(object, con) standardGeneric("readSubrecord"))
-
-setMethod("readSubrecord", "Subrecord",
-          function(object, con) {
+setMethod("read", "Subrecord",
+          function(object, con, lazy = FALSE) {
             ## Seek to the start of data
             seek(con, object@offset + 8) # 8 bytes = size of header
 
-            ## Read the raw data
-            object@data <- readBin(con, "raw", n = object@size)
+            ## Call the appropriate internal data parsing function.
+            object@data <- (
+              Addamasartus:::sprintf("parse%sSubrecordData", object@name)
+            )(readBin(con, "raw", n = object@size))
 
             object
           })

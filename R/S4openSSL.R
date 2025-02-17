@@ -26,6 +26,7 @@ SHA256Hash <- function(x) {
   }
 }
 
+setGeneric("show", function(x) standardGeneric("show"))
 #' @examples
 #' \dontrun{
 #' hash1 <- SHA256Hash("test")
@@ -47,3 +48,4 @@ setMethod("show", "SHA256Hash",
           function(object) {
             cat("SHA256Hash:", openssl::hex2raw(as.character(object)), "\n")
           })
+
