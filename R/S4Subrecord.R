@@ -16,7 +16,7 @@ setClass("Subrecord",
          ))
 
 Subrecord <- function(con, offset, lazy = TRUE) {
-  seek(con, sr_offset <- offset)
+  seek(con, offset)
   sr_name <- rawToChar(readBin(con, "raw", n = 4))
   sr_size <- readBin(con, "integer", n = 1, size = 4, endian = "little")
 
@@ -26,27 +26,15 @@ Subrecord <- function(con, offset, lazy = TRUE) {
     new("Subrecord",
         name = sr_name,
         size = sr_size,
-        data = NULL,
-        offset = sr_offset)
+        data = list(),
+        offset = offset)
   } else {
+    ## Don't skip the data, read it.
     new("Subrecord",
         name = sr_name,
         size = sr_size,
-        data = NULL,
-        offset = sr_offset) |>
+        data = list(),
+        offset = offset) |>
       read(con)
   }
 }
-
-setMethod("read", "Subrecord",
-          function(object, con, lazy = FALSE) {
-            ## Seek to the start of data
-            seek(con, object@offset + 8) # 8 bytes = size of header
-
-            ## Call the appropriate internal data parsing function.
-            object@data <- (
-              Addamasartus:::sprintf("parse%sSubrecordData", object@name)
-            )(readBin(con, "raw", n = object@size))
-
-            object
-          })

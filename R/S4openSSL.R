@@ -45,7 +45,7 @@ setGeneric("show", function(x) standardGeneric("show"))
 ## ShinyAssistant, "Inherit openssl methods automatically through contains, but
 ## we can override or add specific methods if needed."
 setMethod("show", "SHA256Hash",
-          function(object) {
-            cat("SHA256Hash:", openssl::hex2raw(as.character(object)), "\n")
+          function(x) {
+            cat("SHA256Hash:", openssl::hex2raw(as.character(x)), "\n")
           })
 

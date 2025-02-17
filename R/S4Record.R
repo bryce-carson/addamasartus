@@ -5,73 +5,45 @@ setClass("Record",
            size = "numeric",      # uint32
            flag1 = "numeric",     # uint32
            flag2 = "numeric",     # uint32
-           offset = "numeric",    # file offset where record begins
-           subrecords = "list"    # list of Subrecord objects
+           subrecords = "list",   # list of Subrecord objects
+
+           offset = "numeric"     # file offset where record begins
          ),
          prototype = list(
-           name = "",
-           size = 0,
+           name = "TES3",
+           size = 300,
            flag1 = 0,
            flag2 = 0,
-           offset = 0,
-           subrecords = list()
+           subrecords = list(),
+
+           offset = 0
          ))
 
-## Initialize method for Record
-setMethod("initialize", "Record",
-          function(.Object, con, offset, ...) {
-            .Object@offset <- offset
+Record <- function(con, offset, ...) {
+  ## Seek to the record start
+  seek(con, offset)
 
-            ## Seek to the record start
-            seek(con, offset)
+  record_name <- rawToChar(readBin(con, "raw", n = 4))
+  record_size <- readBin(con, "integer", n = 1, size = 4, endian = "little")
+  record_flag1 <- readBin(con, "integer", n = 1, size = 4, endian = "little")
+  record_flag2 <- readBin(con, "integer", n = 1, size = 4, endian = "little")
 
-            ## Read the 4-character name
-            name_raw <- readBin(con, "raw", n = 4)
-            .Object@name <- rawToChar(name_raw)
+  r <- new("Record",
+           name = record_name,
+           size = record_size,
+           flag1 = record_flag1,
+           flag2 = record_flag2,
+           subrecords = list(),
+           offset = offset)
 
-            ## Read the uint32 values
-            .Object@size <- readBin(con, "integer", n = 1, size = 4, endian = "little")
-            .Object@flag1 <- readBin(con, "integer", n = 1, size = 4, endian = "little")
-            .Object@flag2 <- readBin(con, "integer", n = 1, size = 4, endian = "little")
-
-            ## Skip the subrecord data for now
-            seek(con, seek(con) + .Object@size)
-
-            .Object
-          })
-
-## Method to read all subrecords in a record
-setGeneric("readRecord", function(object, con) standardGeneric("readRecord"))
-
-setMethod("readRecord", "Record",
-          function(object, con) {
-            ## Seek to the start of subrecord data
-            current_offset <- object@offset + 16 # 16 bytes = size of header
-            seek(con, current_offset)
-
-            ## Read subrecords until we've consumed size bytes
-            bytes_read <- 0
-            subrecords <- list()
-
-            while(bytes_read < object@size) {
-              ## Create and read subrecord
-              subrecord <- new("Subrecord", con, current_offset)
-              subrecord <- readSubrecord(subrecord, con)
-
-              ## Add to list
-              subrecords <- c(subrecords, list(subrecord))
-
-              ## Update tracking variables
-              bytes_read <- bytes_read + 8 + subrecord@size # header + data
-              current_offset <- current_offset + 8 + subrecord@size
-            }
-
-            object@subrecords <- subrecords
-            object
-          })
-
-## Example usage:
-## con <- file("example.bin", "rb")
-## record <- new("Record", con, offset = 0)
-## record_with_subrecords <- readRecord(record, con)
-## close(con)
+  ## If the argument is provided use whatever value was provided, despite
+  ## defaults assuring laziness.
+  if ("lazy" %in% ...names()) {
+    lazy <- list(...)$lazy
+    read(r, con = con, lazy)
+  } else {
+    ## Skip the subrecord data for now
+    seek(con, seek(con) + record_size)
+    read(r, con = con)
+  }
+}
