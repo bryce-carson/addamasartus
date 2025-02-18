@@ -15,13 +15,5 @@ parseHEDRSubrecordData <- function(rawData) {
     record_count = record_count
   )
 
-  ## FIXME: this is in the wrong spot! This should be in the TES3 record, not the HEDR subrecord!
-  ## ## TODO: implement master list tracking, validating, and diffing behaviours.
-  ## has_masters <- FALSE
-  ## master_list <- NULL
-  ## if (has_masters) {
-  ##   data[["masters"]] <- list(master_list)
-  ## }
-
   data
 }
