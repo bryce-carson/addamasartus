@@ -1,11 +1,7 @@
 ## NOTE: used for ESx files, Records, and Subrecords.
-setGeneric("read", function(x, ..., lazy = TRUE) standardGeneric("read"), signature = "x")
+setGeneric("read", function(x, con, lazy = TRUE) standardGeneric("read"), signature = "x")
 
-setMethod("read", "ESx", function(x, ..., lazy = TRUE) {
-  ## Open connection and read records
-  con <- file(x@path, "rb")
-  on.exit(close(con))
-
+setMethod("read", "ESx", function(x, con, lazy = TRUE) {
   ## TODO: prefer fs_bytes approach to limit the ultimate bound of this...
   ## Read until we reach end of file
   repeat {
@@ -57,55 +53,47 @@ setMethod("read", "ESx", function(x, ..., lazy = TRUE) {
   x
 })
 
-setMethod("read", "Record", function(x, ..., lazy = TRUE) {
-  if ("con" %in% ...names()) {
-    con <- list(...)$con
-    seek(con, x@offset + 16) # Skip the header, which has already been read.
+setMethod("read", "Record", function(x, con, lazy = TRUE) {
+  seek(con, x@offset + 16) # Skip the header, which has already been read.
 
-    bytes_read <- 0
-    subrecords <- list()
-    while(bytes_read < x@size) {
-      ## Create and read subrecord
-      subrecord <- Subrecord(con, seek(con), lazy)
-      subrecords <- c(subrecords, subrecord)
+  bytes_read <- 0
+  subrecords <- list()
+  while(bytes_read < x@size) {
+    ## Create and read subrecord
+    subrecord <- Subrecord(con, seek(con), lazy)
+    subrecords <- c(subrecords, subrecord)
 
-      ## Update tracking variables
-      bytes_read <- sum(bytes_read,
-                        8, # subrecord header size
-                        subrecord@size)
-    }
-
-    x@subrecords <- subrecords
-
-    x
-  } else {
-    stop("The read method for Record requires the `con` argument supply a connection object.")
+    ## Update tracking variables
+    bytes_read <- sum(bytes_read,
+                      8, # subrecord header size
+                      subrecord@size)
   }
+
+  x@subrecords <- subrecords
+
+  return(x)
 })
 
 setMethod("read", "Subrecord",
-          function(x, ..., lazy = TRUE) {
-            if ("con" %in% ...names()) {
-              if (lazy) {
-                seek(con, x@offset + 8 + x@size)
-              } else {
-                ## Seek to the start of data
-                seek(con, x@offset + 8) # 8 bytes = size of header
-
-                ## Handle the case that no parser is defined for this subrecord
-                ## type by asking the user to define one interactively or fail.
-                tryCatch({
-                  parser <- addamasartus:::sprintf("parse%sSubrecordData", x@name)
-                },
-                signalCondition(simpleCondition(sprintf("No parser `addamasartus:::parse%sSubrecordData` was found.", x@name))),
-                \(c) signalCondition(c))
-
-                ## Call the appropriate internal data parsing function.
-                x@data <- parser(readBin(con, "raw", n = x@size))
-              }
-
-              x
+          function(x, con, lazy = TRUE) {
+            if (lazy) {
+              ## Change the position of the file pointer, and do nothing else.
+              seek(con, x@offset + 8 + x@size)
             } else {
-              stop("The read method for Subrecord requires the `con` argument supply a connection object.")
+              ## Seek to the start of data
+              seek(con, x@offset + 8) # 8 bytes = size of header
+
+              tryCatch({
+                ## Call the appropriate internal data parsing function.
+                parser <- getFromNamespace(sprintf("parse%sSubrecordData", x@name),
+                                           getNamespace("addamasartus"))
+                x@data <- parser(readBin(con, "raw", n = x@size))
+              },
+              error = function(e) {
+                stop(sprintf("TODO: parse%sSubrecordData is not yet implemented.", x@name))
+              })
             }
+
+            ## Lazy or not, return the subrecord object if no error occurred.
+            return(x)
           })

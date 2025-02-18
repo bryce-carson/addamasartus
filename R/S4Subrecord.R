@@ -35,6 +35,6 @@ Subrecord <- function(con, offset, lazy = TRUE) {
         size = sr_size,
         data = list(),
         offset = offset) |>
-      read(con)
+      read(con, lazy)
   }
 }

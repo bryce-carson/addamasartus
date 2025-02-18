@@ -19,7 +19,7 @@ setClass("Record",
            offset = 0
          ))
 
-Record <- function(con, offset, ...) {
+Record <- function(con, offset, lazy = TRUE) {
   ## Seek to the record start
   seek(con, offset)
 
@@ -36,14 +36,10 @@ Record <- function(con, offset, ...) {
            subrecords = list(),
            offset = offset)
 
-  ## If the argument is provided use whatever value was provided, despite
-  ## defaults assuring laziness.
-  if ("lazy" %in% ...names()) {
-    lazy <- list(...)$lazy
-    read(r, con = con, lazy)
-  } else {
+  if (lazy) {
     ## Skip the subrecord data for now
     seek(con, seek(con) + record_size)
-    read(r, con = con)
   }
+
+  read(r, con = con, lazy = lazy)
 }

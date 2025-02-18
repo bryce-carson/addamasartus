@@ -90,7 +90,7 @@ The list view will still use a sidebar display.
 
 * Testing
 #+begin_src R
-  cyberbak <- "~/src/XBOX/ogxboxBackups/Cyber BACKUP.ess"
+  cyber.bak <- fs::path("~/src/XBOX/ogxboxBackups/Cyber BACKUP.ess")
   fcon <- file(cyberbak, open = "rb", raw = TRUE) # binary file connection
 
   library(openssl)
