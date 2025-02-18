@@ -35,7 +35,6 @@ setMethod("read", "ESx", function(x, con, lazy = TRUE) {
       assign("TES3", record, envir = .GlobalEnv)
 
       HEDR <- record@subrecords[[1]]
-      ## FIXME: the data is empty! It probably isn't getting parsed!
       count <- HEDR@data$record_count
       if (is.null(count) || !is.numeric(count) || 0 > count)
         stop("Critical error obtaining record count from HEDR subrecord of TES3 record.")
