@@ -28,14 +28,10 @@ setMethod("read", "ESx", function(x, con, lazy = TRUE) {
         !(is_tes3_record <- rawToChar(test_read) == "TES3")) {
       stop("Not a valid ESx file: Missing TES3 signature")
     } else if (is_tes3_record) {
-      record <- Record(con, current_pos, lazy = FALSE)
-
-      ## TODO: remove this after things are working nicely.
-      str(record)
-      assign("TES3", record, envir = .GlobalEnv)
-
-      HEDR <- record@subrecords[[1]]
+      TES3 <- Record(con, current_pos, lazy = FALSE)
+      HEDR <- TES3@subrecords[[1]]
       count <- HEDR@data$record_count
+
       if (is.null(count) || !is.numeric(count) || 0 > count)
         stop("Critical error obtaining record count from HEDR subrecord of TES3 record.")
 
@@ -90,10 +86,23 @@ setMethod("read", "Subrecord",
                 ## Call the appropriate internal data parsing function.
                 parser <- getFromNamespace(sprintf("parse%sSubrecordData", x@name),
                                            getNamespace("addamasartus"))
-                x@data <- parser(readBin(con, "raw", n = x@size))
               },
               error = function(e) {
-                stop(sprintf("TODO: parse%sSubrecordData is not yet implemented.", x@name))
+                msg <- sprintf("parse%sSubrecordData is not yet implemented, or was (erroneously) not found in the addamasartus namespace!", x@name)
+                signalCondition(errorCondition(msg, class = "namespaceError"))
+              })
+
+              tryCatch({
+                rawBytes <- readBin(con, "raw", n = x@size)
+                x@data <- parser(rawBytes)
+              },
+              parseError = function(e) {
+                signalCondition(e)
+              },
+              error = function(e) {
+                "An reading error occured for %s while reading %d raw bytes passed to the function." |>
+                  sprintf(x@name, x@size) |>
+                  stop()
               })
             }
 

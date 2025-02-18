@@ -1,5 +1,10 @@
 parseSCRDSubrecordData <- function(rawData) {
-  return(list(
-    unkown = readBin(rawData, "raw", size = 20)
-  ))
+  tryCatch({
+    return(list(
+      unkown = rawData
+    ))
+  },
+  parseError = function(e) {
+    warning("Parser error caught during SCRD subrecord parsing!")
+  })
 }
