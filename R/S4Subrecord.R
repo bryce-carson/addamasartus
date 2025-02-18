@@ -1,4 +1,5 @@
 ## Define Subrecord class first
+#' @export
 setClass("Subrecord",
          slots = list(
            name = "character",    # 4-byte string
@@ -15,6 +16,7 @@ setClass("Subrecord",
            offset = 0
          ))
 
+#' @export
 Subrecord <- function(con, offset, lazy = TRUE) {
   seek(con, offset)
   sr_name <- rawToChar(readBin(con, "raw", n = 4))

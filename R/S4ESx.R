@@ -1,4 +1,5 @@
 ## ESx class definition
+#' @export
 setClass("ESx",
          slots = list(path = "fs_path", # Path to the binary file
                       records = "list"), # List of Record objects

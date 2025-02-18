@@ -1,4 +1,5 @@
 ## Modified Record class to contain list of Subrecords
+#' @export
 setClass("Record",
          slots = list(
            name = "character",    # 4-byte string
@@ -19,6 +20,7 @@ setClass("Record",
            offset = 0
          ))
 
+#' @export
 Record <- function(con, offset, lazy = TRUE) {
   ## Seek to the record start
   seek(con, offset)

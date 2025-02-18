@@ -1,6 +1,8 @@
 ## NOTE: used for ESx files, Records, and Subrecords.
+#' @export
 setGeneric("read", function(x, con, lazy = TRUE) standardGeneric("read"), signature = "x")
 
+#' @export
 setMethod("read", "ESx", function(x, con, lazy = TRUE) {
   ## TODO: prefer fs_bytes approach to limit the ultimate bound of this...
   ## Read until we reach end of file
@@ -53,6 +55,7 @@ setMethod("read", "ESx", function(x, con, lazy = TRUE) {
   x
 })
 
+#' @export
 setMethod("read", "Record", function(x, con, lazy = TRUE) {
   seek(con, x@offset + 16) # Skip the header, which has already been read.
 
@@ -74,6 +77,7 @@ setMethod("read", "Record", function(x, con, lazy = TRUE) {
   return(x)
 })
 
+#' @export
 setMethod("read", "Subrecord",
           function(x, con, lazy = TRUE) {
             if (lazy) {
