@@ -1,4 +1,4 @@
-parseMASTSubrecordData <- function(rawData) {
+parseMASTSubrecordData <- function(rawData, parentRecordHeader) {
   tryCatch({
     list(basename = rawToChar(rawData))
   },
@@ -7,7 +7,7 @@ parseMASTSubrecordData <- function(rawData) {
   })
 }
 
-parseDATASubrecordData <- function(rawData) {
+parseDATASubrecordData <- function(rawData, parentRecordHeader) {
   tryCatch({
     list(bytes = readBin(rawData, "integer", size = 8))
   },

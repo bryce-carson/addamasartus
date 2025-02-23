@@ -1,4 +1,4 @@
-parseSCRSSubrecordData <- function(rawData) {
+parseSCRSSubrecordData <- function(rawData, parentRecordHeader) {
   tryCatch({
     list(unknown = rawData)
   },

@@ -17,7 +17,7 @@ setClass("Subrecord",
          ))
 
 #' @export
-Subrecord <- function(con, offset, lazy = TRUE) {
+Subrecord <- function(con, offset, lazy = TRUE, parentRecordHeader) {
   seek(con, offset)
   sr_name <- rawToChar(readBin(con, "raw", n = 4))
   sr_size <- readBin(con, "integer", n = 1, size = 4, endian = "little")
@@ -37,6 +37,6 @@ Subrecord <- function(con, offset, lazy = TRUE) {
         size = sr_size,
         data = list(),
         offset = offset) |>
-      read(con, lazy)
+      read(con, lazy, parentRecordHeader)
   }
 }

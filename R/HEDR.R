@@ -1,4 +1,4 @@
-parseHEDRSubrecordData <- function(rawData) {
+parseHEDRSubrecordData <- function(rawData, parentRecordHeader) {
   tryCatch({
     ## Parse the components
     version <- readBin(rawData[1:4], "numeric", n = 1, size = 4, endian = "little")
@@ -18,7 +18,8 @@ parseHEDRSubrecordData <- function(rawData) {
 
     return(data)
   },
-  parseError = function(e) {
-    warning("Parser error caught during HEDR subrecord parsing!")
+  error = function(e) {
+    errorCondition("Parser error caught during HEDR subrecord parsing!",
+                   class = "parseError")
   })
 }
