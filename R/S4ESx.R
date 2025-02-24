@@ -12,7 +12,7 @@ ESX <- function(filepath, how = "TES3") {
   con <- file(filepath, "rb")
   on.exit(close(con))
 
-  read(new("ESX", path = filepath, records = list()), con = con, how)
+  return(read(new("ESX", path = filepath, records = list()), con = con, how))
 }
 
 ## This only validates the object's file path, nothing else.

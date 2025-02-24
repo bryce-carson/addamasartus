@@ -83,7 +83,6 @@ setMethod("read", "ESX", function(x, con, how = c("TES3", "ENUM", "LAZY"), filte
 
   seek(con, 0)
   TES3 <- Record(con, 0, how = "ENUM", "TES3")
-  ## FIXME: Error in TES3@subrecords[[1]] (from read.R#85) : subscript out of bounds.
   HEDR <- TES3@subrecords[[1]]
   count <- HEDR@data$record_count
   if (how == "TES3") {
@@ -114,7 +113,7 @@ setMethod("read", "ESX", function(x, con, how = c("TES3", "ENUM", "LAZY"), filte
 
   x@records <- records
 
-  invisible(x)
+  return(x)
 })
 
 setMethod("read", "Record", function(x, con, how = c("LAZY", "ENUM")) {
@@ -179,7 +178,7 @@ not found in the addamasartus namespace! Error occured while reading %s@%d."
     fmt <- "An error (of class %s) occurred while reading or parsing %s (0x%02X; within %s 0x%02X):
   %s"
     stop(sprintf(fmt,
-                 conditionCall(e),
+                 class(e),
                  x@name,
                  x@offset,
                  RecordHeader$type,
