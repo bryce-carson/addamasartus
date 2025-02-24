@@ -1,4 +1,4 @@
-## NOTE: used for ESx files, Records, and Subrecords.
+## NOTE: used for ESX files, Records, and Subrecords.
 setGeneric("header", function(x) standardGeneric("header"))
 
 setMethod("header", "Record", function(x) {

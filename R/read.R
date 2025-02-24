@@ -1,7 +1,7 @@
-## NOTE: used for ESx files, Records, and Subrecords.
+## NOTE: used for ESX files, Records, and Subrecords.
 setGeneric("read", function(x, con, ...) standardGeneric("read"), signature = "x")
 
-#' @param how dictactes *how* the ESx file is read. This argument is an
+#' @param how dictactes *how* the ESX file is read. This argument is an
 #'   additional parameter to the generic read method, and when reading this
 #'   argument is passed onward as appropriate. "TES3" causes the reader to only
 #'   parse the TES3 record (which is always parsed fully), and then return.
@@ -10,7 +10,7 @@ setGeneric("read", function(x, con, ...) standardGeneric("read"), signature = "x
 #'   lazily reading the headers of all records.
 #' @param filter a vector of record names to fully enumerate; all other record
 #'   types are read lazily (only the header is read).
-setMethod("read", "ESx", function(x, con, how = c("TES3", "ENUM", "LAZY"), filter = "TES3") {
+setMethod("read", "ESX", function(x, con, how = c("TES3", "ENUM", "LAZY"), filter = "TES3") {
   how <- match.arg(how) # signal an error if no matching argument.
   record_types <- c(
     "TES3",
@@ -78,7 +78,7 @@ setMethod("read", "ESx", function(x, con, how = c("TES3", "ENUM", "LAZY"), filte
   }
 
   if (!(rawToChar(maybeTES3) == "TES3")) {
-    stop("Not a valid ESx file: Missing TES3 signature")
+    stop("Not a valid ESX file: Missing TES3 signature")
   }
 
   seek(con, 0)
