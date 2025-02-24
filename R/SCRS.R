@@ -21,6 +21,20 @@ parseSCRSSubrecordData <- function(con, subrecord, parentRecordHeader) {
   })
 }
 
+## Translated from the Mopy source code. TODO: prefer using imager or magick
+## functions instead, after successful plotting/rendering of the image as it is
+## encoded.
+colourRemap <- function(image) {
+  averageRGB <- mean()
+
+
+  return(apply(image, 2, function(colour) {
+
+    colour <- (colour - averageRGB) * scaleRGB
+    return(max(0, min(255, colour + 128)))
+  }))
+}
+
 ## Hand translated from Python 2 from Mopy/mash/mosh.py (https://github.com/polemion/Wrye-Mash-Polemos/blob/dbce232bd053ff8e2c49e6ada85c570f07376d7d/Mopy/mash/mosh.py#L3760-L3782).
 ## #--Convert bgra array to rgb array
 ## buff = cStringIO.StringIO()
