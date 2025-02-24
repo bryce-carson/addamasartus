@@ -7,15 +7,12 @@ setClass("ESx",
                           records = list()))
 
 #' @export
-ESx <- function(filepath, lazy = TRUE, enumerate_records = FALSE) {
+ESx <- function(filepath, how = "TES3") {
   ## Open connection and read records
   con <- file(filepath, "rb")
   on.exit(close(con))
 
-  read(new("ESx", path = filepath, records = list()),
-       con = con,
-       lazy = lazy,
-       enumerate_records = enumerate_records)
+  read(new("ESx", path = filepath, records = list()), con = con, how)
 }
 
 ## This only validates the object's file path, nothing else.

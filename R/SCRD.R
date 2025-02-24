@@ -1,7 +1,7 @@
-parseSCRDSubrecordData <- function(rawData, parentRecordHeader) {
+parseSCRDSubrecordData <- function(con, subrecord, parentRecordHeader) {
   tryCatch({
     return(list(
-      unkown = rawData
+      unknown = readBin(con, "raw", subrecord@size)
     ))
   },
   parseError = function(e) {

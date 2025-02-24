@@ -1,15 +1,15 @@
-parseMASTSubrecordData <- function(rawData, parentRecordHeader) {
+parseMASTSubrecordData <- function(con, subrecord, parentRecordHeader) {
   tryCatch({
-    list(basename = rawToChar(rawData))
+    return(list(basename = rawToChar(readBin(con, "raw", subrecord@size))))
   },
   parseError = function(e) {
     warning("Parser error caught during MAST subrecord parsing!")
   })
 }
 
-parseDATASubrecordData <- function(rawData, parentRecordHeader) {
+parseDATASubrecordData <- function(con, subrecord, parentRecordHeader) {
   tryCatch({
-    list(bytes = readBin(rawData, "integer", size = 8))
+    return(list(bytes = readBin(con, "integer", size = subrecord@size)))
   },
   parseError = function(e) {
     warning("Parser error caught during DATA subrecord parsing!")

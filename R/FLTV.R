@@ -1,8 +1,8 @@
-parseFLTVSubrecordData <- function(rawData, parentRecordHeader) {
+parseFLTVSubrecordData <- function(con, subrecord, parentRecordHeader) {
   tryCatch({
-    list(
-      floatData = readBin(rawData, "numeric")
-    )
+    return(list(
+      floatData = readBin(con, "numeric", subrecord@size)
+    ))
   },
   error = function(e) {
     errorCondition("Parse error caught during HEDR subrecord parsing!",

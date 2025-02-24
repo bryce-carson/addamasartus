@@ -1,8 +1,8 @@
-parseFNAMSubrecordData <- function(rawData, parentRecordHeader) {
+parseFNAMSubrecordData <- function(con, subrecord, parentRecordHeader) {
   tryCatch({
-    list(
-      globalDataType = rawToChar(rawData)
-    )
+    return(list(
+      globalDataType = rawToChar(readBin(con, "raw", subrecord@size))
+    ))
   },
   error = function(e) {
     errorCondition("Parse error caught during HEDR subrecord parsing!",

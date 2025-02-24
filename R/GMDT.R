@@ -1,25 +1,19 @@
-parseGMDTSubrecordData <- function(rawData, parentRecordHeader) {
+parseGMDTSubrecordData <- function(con, subrecord, parentRecordHeader) {
   tryCatch({
-    unknownFloatsSize <- 6 * 4
-    unknownFloatSize <- 4
+    unknownFloats <- readBin(con, "numeric", n = 6, size = 4)
+    cellName <- readBin(con, "raw", n = 64)
+    unknownFloat <- readBin(con, "numeric", n = 1, size = 4)
+    characterName <- readBin(con, "raw", n = 32)
 
-    data <- list(
-      unknownFloats = readBin(rawData, "double", n = 6, size = 4),
-      cellName = readBin(rawData, "raw", n = 64),
-      unknownFloat = readBin(rawData, "double", n = 1, size = 4),
-      characterName = readBin(rawData, "raw", n = 32)
-    )
+    if (seek(con) - subrecord@offset == subrecord@size) {
+      signalCondition(
+        errorCondition("The number of bytes read was inequal to the specified
+ size of the subrecord.",
+ class = "SubrecordReadError")
+ )
+    }
 
-    cellNameByteIndices <- seq_length(64) + unknownFloatsSize
-    cellName <- gsub("\\0*$", "", rawToChar(rawData[cellNameByteIndices]))
-
-    characterNameByteIndices <- seq_length(32) + unknownFloatSize
-    characterName <- gsub("\\0*$", "", rawToChar(rawData[characterNameByteIndices]))
-
-    data$cellName <- cellName
-    data$characterName <- characterName
-
-    return(data)
+    return(list(unknownFloats, cellName, unknownFloat, characterName))
   },
   error = function(e) {
     c <- errorCondition("Parser error caught during GMDT subrecord parsing!",

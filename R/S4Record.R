@@ -2,13 +2,13 @@
 #' @export
 setClass("Record",
          slots = list(
+           offset = "numeric",    # file offset where record begins
+           
            name = "character",    # 4-byte string
            size = "numeric",      # uint32
            flag1 = "numeric",     # uint32
            flag2 = "numeric",     # uint32
-           subrecords = "list",   # list of Subrecord objects
-
-           offset = "numeric"     # file offset where record begins
+           subrecords = "list"    # list of Subrecord objects
          ),
          prototype = list(
            name = "TES3",
@@ -21,7 +21,7 @@ setClass("Record",
          ))
 
 #' @export
-Record <- function(con, offset, lazy = TRUE) {
+Record <- function(con, offset, how, filter) {
   ## Seek to the record start
   seek(con, offset)
 
@@ -38,10 +38,19 @@ Record <- function(con, offset, lazy = TRUE) {
            subrecords = list(),
            offset = offset)
 
-  if (lazy) {
+  if (how == "LAZY") {
     ## Skip the subrecord data for now
     seek(con, seek(con) + record_size)
+    invisible(r)
   }
 
-  read(r, con = con, lazy = lazy)
+  if (missing(filter)) {
+    invisible(read(r, con = con, "ENUM"))
+  } else if (r@name %in% filter) {
+    invisible(read(r, con = con, "ENUM"))
+  } else {
+    ## NOTE: condidate's subrecords aren't enumerated.
+    seek(con, seek(con) + record_size)
+    invisible(r)
+  }
 }

@@ -1,6 +1,6 @@
 * Testing
 #+begin_src R
-  cyber.bak <- ESx(fs::path("~/src/XBOX/ogxboxBackups/Cyber BACKUP.ess"))
+  cyber.bak <- fs::path("~/src/XBOX/ogxboxBackups/Cyber BACKUP.ess")
 #+end_src
 
 * NexusMods Personal API key

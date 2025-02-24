@@ -1,131 +1,192 @@
 ## NOTE: used for ESx files, Records, and Subrecords.
-#' @export
-setGeneric("read", function(x, con, lazy = TRUE, ...) standardGeneric("read"), signature = "x")
+setGeneric("read", function(x, con, ...) standardGeneric("read"), signature = "x")
 
-#' @export
-setMethod("read", "ESx", function(x, con, lazy = TRUE, enumerate_records = FALSE) {
-  ## TODO: prefer fs_bytes approach to limit the ultimate bound of this...
-  ## Read until we reach end of file
-  repeat {
-    ## Get current position
-    current_pos <- seek(con)
+#' @param how dictactes *how* the ESx file is read. This argument is an
+#'   additional parameter to the generic read method, and when reading this
+#'   argument is passed onward as appropriate. "TES3" causes the reader to only
+#'   parse the TES3 record (which is always parsed fully), and then return.
+#'   "ENUM" will cause the entire file to be fully parsed. "LAZY" means to
+#'   lazily read the subrecords (just the headers) of all records in addition to
+#'   lazily reading the headers of all records.
+#' @param filter a vector of record names to fully enumerate; all other record
+#'   types are read lazily (only the header is read).
+setMethod("read", "ESx", function(x, con, how = c("TES3", "ENUM", "LAZY"), filter = "TES3") {
+  how <- match.arg(how) # signal an error if no matching argument.
+  record_types <- c(
+    "TES3",
+    "GMST",
+    "GLOB",
+    "CLAS",
+    "FACT",
+    "RACE",
+    "SOUN",
+    "SKIL",
+    "MGEF",
+    "SCPT",
+    "REGN",
+    "BSGN",
+    "LTEX",
+    "STAT",
+    "DOOR",
+    "MISC",
+    "WEAP",
+    "CONT",
+    "SPEL",
+    "CREA",
+    "BODY",
+    "LIGH",
+    "ENCH",
+    "NPC_",
+    "ARMO",
+    "CLOT",
+    "REPA",
+    "ACTI",
+    "APPA",
+    "LOCK",
+    "PROB",
+    "INGR",
+    "BOOK",
+    "ALCH",
+    "LEVI",
+    "LEVC",
+    "CELL",
+    "LAND",
+    "PGRD",
+    "SNDG",
+    "DIAL",
+    "INFO"
+  )
+  filter <- match.arg(filter, record_types, several.ok = TRUE)
 
-    ## Try to read 4 bytes (for record name)
-    test_read <- try(readBin(con, "raw", n = 4), silent = TRUE)
+  ## TODO: when calling this on an existing object.
+  ## Open connection and read records
+  if (missing(con) && length(x@records) == 1) {
+    ## Given the heuristic in this condition it's likely the user wants to
+    ## finish reading the object. TODO: use a filter function parameter to
+    ## filter record types to be read (lazily or enumerated).
+    con <- file(x@path, "rb")
+    on.exit(close(con))
+  }
 
-    ## If we couldn't read 4 bytes, we're at EOF
-    if (inherits(test_read, "try-error") || length(test_read) < 4) {
-      if (length(test_read) == 0)
-        break
-      else
-        ## TODO: this may be incorrect in the ideal case, where there is simply
-        ## no bytes left at all and we attempt to /check/ if there is at least
-        ## another record header. Is there an `is.eof(con)` method?
-        stop("Bytes (insufficient for even a record header) remain near EOF, but was unable to read them.")
-    }
+  bytes <- as.integer(fs::file_size(x@path))
 
-    ## If reading of the connection has just begun, ensure that the last four
-    ## bytes read (a record header name) are the magic bytes for this file
-    ## type.
-    if (seek(con) == 4 && !(rawToChar(test_read) == "TES3")) {
-      stop("Not a valid ESx file: Missing TES3 signature")
-    } else if (rawToChar(test_read) == "TES3") {
-      TES3 <- Record(con, current_pos, lazy = FALSE)
-      HEDR <- TES3@subrecords[[1]]
-      count <- HEDR@data$record_count
+  ## Verify magicka bytes -----
+  seek(con, 0)
+  maybeTES3 <- try(readBin(con, "raw", n = 4), silent = TRUE)
+  if (inherits(maybeTES3, "try-error") || length(maybeTES3) < 4) {
+    stop("Erorr reading file connection.")
+  }
 
-      if (!exists("count") || !is.numeric(count) || 0 > count) {
-        print(str(TES3))
-        stop("Critical error obtaining record count from HEDR subrecord of TES3 record.")
+  if (!(rawToChar(maybeTES3) == "TES3")) {
+    stop("Not a valid ESx file: Missing TES3 signature")
+  }
+
+  seek(con, 0)
+  TES3 <- Record(con, 0, how = "ENUM", "TES3")
+  ## FIXME: Error in TES3@subrecords[[1]] (from read.R#85) : subscript out of bounds.
+  HEDR <- TES3@subrecords[[1]]
+  count <- HEDR@data$record_count
+  if (how == "TES3") {
+    records <- vector("list", length = 1)
+  } else {
+    records <- vector("list", length = 1 + count)
+  }
+  records[[1]] <- TES3
+
+  if (how != "TES3") {
+    recordIndex <- 2
+    while (seek(con) < bytes) {
+      ## Get current position
+      current_pos <- seek(con)
+
+      ## Fully read records that are part of a given set, otherwise read lazily.
+      if (how == "ENUM" && !missing(filter)) {
+        records[[recordIndex]] <- Record(con, current_pos, how, filter)
+      } else if (!missing(filter)) {
+        simpleWarning("`how` is \"LAZY\" but `filter` was supplied; filter
+ functions do nothing when reading lazily, so the filter is ignored.")
+        records[[recordIndex]] <- Record(con, current_pos, how, record_types[-1])
       }
 
-      if (enumerate_records)
-        records <- vector("list", length = 1 + count)
-      else
-        records <- vector("list", length = 1)
-
-      records[[1]] <- TES3
-
-      recordIndex <- 2
-    } else if (enumerate_records) {
-      ## Create new records lazily.
-      records[[recordIndex]] <- Record(con, current_pos, lazy)
       recordIndex <- recordIndex + 1
-    } else {
-      break
     }
   }
 
   x@records <- records
 
-  x
+  invisible(x)
 })
 
-#' @export
-setMethod("read", "Record", function(x, con, lazy = TRUE) {
-  seek(con, x@offset + 16) # Skip the header, which has already been read.
+setMethod("read", "Record", function(x, con, how = c("LAZY", "ENUM")) {
+  how <- match.arg(how)
 
-  parentRecordHeader <- header(x)
+  ## `Record()` calls the `read` method for Record classed objects (all helper
+  ## functions call the reader.
+  seek(con, x@offset + 16)
 
-  bytes_read <- 0
+  subrecordBytesRead <- 0
   subrecords <- list()
-  while(bytes_read < x@size) {
+  while (subrecordBytesRead < x@size) {
     ## Create and read subrecord
-    subrecord <- Subrecord(con, seek(con), lazy, parentRecordHeader)
+    subrecord <- Subrecord(con, seek(con), how, header(x))
     subrecords <- c(subrecords, subrecord)
 
     ## Update tracking variables
-    bytes_read <- sum(bytes_read,
-                      8, # subrecord header size
-                      subrecord@size)
+    subrecordBytesRead <- sum(subrecordBytesRead,
+                              4, # NAME
+                              4, # SIZE
+                              subrecord@size)
   }
 
   x@subrecords <- subrecords
   names(x@subrecords) <- sapply(subrecords, \(s) s@name)
 
-  return(x)
+  invisible(x)
 })
 
-#' @export
-setMethod("read", "Subrecord",
-          function(x, con, lazy = TRUE, parentRecordHeader) {
-            if (lazy) {
-              ## Change the position of the file pointer, and do nothing else.
-              seek(con, x@offset + 8 + x@size)
-            } else {
-              ## Seek to the start of data
-              seek(con, x@offset + 8) # 8 bytes = size of header
+setMethod("read", "Subrecord", function(x, con, how = c("LAZY", "ENUM"), RecordHeader) {
+  how <- match.arg(how)
 
-              ## getFromNamespace doesn't have a unique error condition.
-              tryCatch({
-                ## Call the appropriate internal data parsing function.
-                qc <- quote(parser <- getFromNamespace(sprintf("parse%sSubrecordData", x@name),
-                                                       getNamespace("addamasartus")))
-                eval(qc)
-              },
-              condition = function(e) {
-                msg <- sprintf("parse%sSubrecordData is not yet implemented, or was (erroneously) not found in the addamasartus namespace!", x@name)
-                msg <- sprintf("%s\nError occured while reading %s@%d",
-                               msg,
-                               parentRecordHeader$type,
-                               parentRecordHeader$offset)
-                stop(errorCondition(msg, class = "namespaceError", call = qc))
-              })
+  if (how == "LAZY") {
+    ## Change the position of the file pointer, and do nothing else.
+    seek(con, x@offset + 8 + x@size)
+    invisible(x)
+  }
 
-              tryCatch({
-                rawBytes <- readBin(con, "raw", n = x@size)
-                x@data <- parser(rawBytes, parentRecordHeader)
-              },
-              error = function(e) {
-                msg <- "An reading error occured for %s while reading %d raw bytes passed to the function. Bytes begin at %s"
-                msg <- sprintf("%s\nError occured while reading %s@%d",
-                               sprintf(msg, x@name, x@size, x@offset),
-                               parentRecordHeader$type,
-                               parentRecordHeader$offset)
-                stop(msg)
-              })
-            }
+  ## Seek to the start of data
+  seek(con, x@offset + 8) # 8 bytes = size of header
 
-            ## Lazy or not, return the subrecord object if no error occurred.
-            return(x)
-          })
+  ## getFromNamespace doesn't have a unique error condition.
+  tryCatch({
+    ## Call the appropriate internal data parsing function.
+    parserName <- sprintf("parse%sSubrecordData", x@name)
+    ns <- getNamespace("addamasartus")
+    qc <- substitute(parser <- getFromNamespace(parserName, ns))
+    eval(qc)
+  },
+  condition = function(e) {
+    fmt <- "parse%sSubrecordData is not yet implemented, or was (erroneously)
+not found in the addamasartus namespace! Error occured while reading %s@%d."
+    msg <- sprintf(fmt, x@name, x@name, x@offset)
+    stop(errorCondition(msg, class = "namespaceError", call = qc))
+  })
+
+  ## Read the binary data of the subrecord and parse it according to x@name.
+  tryCatch({
+    x@data <- parser(con, x, RecordHeader)
+  },
+  error = function(e) {
+    fmt <- "An error (of class %s) occurred while reading or parsing %s (0x%02X; within %s 0x%02X):
+  %s"
+    stop(sprintf(fmt,
+                 conditionCall(e),
+                 x@name,
+                 x@offset,
+                 RecordHeader$type,
+                 RecordHeader$offset,
+                 conditionMessage(e)))
+  })
+
+  ## Lazy or not, return the subrecord object if no error occurred.
+  invisible(x)
+})

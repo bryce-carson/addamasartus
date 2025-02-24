@@ -2,11 +2,11 @@
 #' @export
 setClass("Subrecord",
          slots = list(
+           offset = "numeric",    # file offset where subrecord begins
+           
            name = "character",    # 4-byte string
            size = "numeric",      # uint32
-           data = "list",
-
-           offset = "numeric"     # file offset where subrecord begins
+           data = "list"
          ),
          prototype = list(
            name = "NULL",
@@ -17,12 +17,12 @@ setClass("Subrecord",
          ))
 
 #' @export
-Subrecord <- function(con, offset, lazy = TRUE, parentRecordHeader) {
+Subrecord <- function(con, offset, how, parentRecordHeader) {
   seek(con, offset)
   sr_name <- rawToChar(readBin(con, "raw", n = 4))
   sr_size <- readBin(con, "integer", n = 1, size = 4, endian = "little")
 
-  if (lazy) {
+  if (how == "LAZY") {
     ## Skip the data for now
     seek(con, seek(con) + sr_size)
     new("Subrecord",
@@ -37,6 +37,6 @@ Subrecord <- function(con, offset, lazy = TRUE, parentRecordHeader) {
         size = sr_size,
         data = list(),
         offset = offset) |>
-      read(con, lazy, parentRecordHeader)
+      read(con, how, parentRecordHeader)
   }
 }
