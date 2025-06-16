@@ -1,4 +1,8 @@
-* Testing
+* Interactive and informal testing
+This is not formal testing, so the only thing provided in this section is a
+quick way to setup an interactive testing session (if an .Rdata file for such a
+session doesn't already exist).
+
 #+begin_src R
   cyber.bak <- fs::path("~/src/XBOX/ogxboxBackups/Cyber BACKUP.ess")
 #+end_src
@@ -14,3 +18,741 @@ required for the mentioned features to work. Support for the features utilizing
 web scraping instead will not be implemented, out of respect for the Nexus team
 and the modders who benefit from the advertisements the Nexus hosts on their
 virtual real estate.
+
+* Addamasartus
+
+Addamasartus is an R package used to parse The Elder Scrolls III: Morrowind
+(hereafter Morrowind) master files, plugin files, and save files. It was born
+out of a need to fix the location of Sharn gra-Muzgob in the Balmora Mage's
+Guild; instead of finishing this project I created a small, experimental ESP
+called "xboxbelt.esp" which adds a "Belt of Boxes" to Morrowind. This belt is
+used to run the console command `ra`, which resets actor locations; I play
+Morrowind on my softmodded Xbox, so I can use simple ESPs like this. To interact
+with Sharn I created a skull which creates a copy of Sharn and places her behind
+the player character; when the player character is looking at the skull to
+activate this object Sharn will appear nearby her bookshelf, but far enough away
+that she will not clip through the walls because of animation issues.
+
+I am working on this project in my free time to practice "application programming."
+
+** The ESx reader
+
+Reading ESx files is not too complex. The format is documented well-enough in
+[[file:mw_esm.txt][Dave Humphrey's "mw_esm.txt"]].
+
+#+begin_src R :noweb :tangle read.R
+  ## NOTE: used for ESX files, Records, and Subrecords.
+  setGeneric("read", function(x, con, ...) standardGeneric("read"), signature = "x")
+
+  #' @param parsing_method dictactes *how* the ESX file is parsed. This argument
+  #'   is an additional parameter to the generic read method, and when reading
+  #'   this argument is passed onward as appropriate. "TES3" causes the reader to
+  #'   only parse the TES3 record (which is always parsed fully), and then return.
+  #'   "ENUM" will cause the entire file to be fully parsed. "LAZY" means to read
+  #'   the headers of the subrecords of all records in addition to the normal
+  #'   reading of record headers.
+  #' @param filter a vector of record names to fully enumerate; all other record
+  #'   types are unparsed (reding only their header).
+  setMethod("read", "ESX", function(x, con, parsing_method = c("TES3", "ENUM", "LAZY"), filter = "TES3") {
+    parsing_method <- match.arg(parsing_method) # signal an error if no matching argument.
+    record_types <- c(
+      "TES3",
+      "GMST",
+      "GLOB",
+      "CLAS",
+      "FACT",
+      "RACE",
+      "SOUN",
+      "SKIL",
+      "MGEF",
+      "SCPT",
+      "REGN",
+      "BSGN",
+      "LTEX",
+      "STAT",
+      "DOOR",
+      "MISC",
+      "WEAP",
+      "CONT",
+      "SPEL",
+      "CREA",
+      "BODY",
+      "LIGH",
+      "ENCH",
+      "NPC_",
+      "ARMO",
+      "CLOT",
+      "REPA",
+      "ACTI",
+      "APPA",
+      "LOCK",
+      "PROB",
+      "INGR",
+      "BOOK",
+      "ALCH",
+      "LEVI",
+      "LEVC",
+      "CELL",
+      "LAND",
+      "PGRD",
+      "SNDG",
+      "DIAL",
+      "INFO"
+    )
+    filter <- match.arg(filter, record_types, several.ok = TRUE)
+    
+    ## TODO: when calling this on an existing object.
+    ## Open connection and read records
+    if (missing(con) && length(x@records) == 1) {
+      ## Given the heuristic in this condition it's likely the user wants to
+      ## finish reading the object. TODO: use a filter function parameter to
+      ## filter record types to be read (lazily or enumerated).
+      con <- file(x@path, "rb")
+      on.exit(close(con))
+    }
+    
+    bytes <- as.integer(fs::file_size(x@path))
+    
+    ## Verify magicka bytes -----
+    seek(con, 0)
+    maybeTES3 <- try(readBin(con, "raw", n = 4), silent = TRUE)
+    if (inherits(maybeTES3, "try-error") || length(maybeTES3) < 4) {
+      stop("Erorr reading file connection.")
+    }
+    
+    if (!(rawToChar(maybeTES3) == "TES3")) {
+      stop("Not a valid ESX file: Missing TES3 signature")
+    }
+    
+    seek(con, 0)
+    TES3 <- Record(con, 0, how = "ENUM", "TES3")
+    HEDR <- TES3@subrecords[[1]]
+    count <- HEDR@data$record_count
+    if (how == "TES3") {
+      records <- vector("list", length = 1)
+    } else {
+      records <- vector("list", length = 1 + count)
+    }
+    records[[1]] <- TES3
+    
+    if (how != "TES3") {
+      recordIndex <- 2
+      while (seek(con) < bytes) {
+        ## Get current position
+        current_pos <- seek(con)
+        
+        ## Fully read records that are part of a given set, otherwise read lazily.
+        if (how == "ENUM" && !missing(filter)) {
+          records[[recordIndex]] <- Record(con, current_pos, how, filter)
+        } else if (!missing(filter)) {
+          simpleWarning("`how` is \"LAZY\" but `filter` was supplied; filter
+   functions do nothing when reading lazily, so the filter is ignored.")
+          records[[recordIndex]] <- Record(con, current_pos, how, record_types[-1])
+        }
+        
+        recordIndex <- recordIndex + 1
+      }
+    }
+    
+    x@records <- records
+    
+    return(x)
+  })
+
+  setMethod("read", "Record", function(x, con, how = c("LAZY", "ENUM")) {
+    how <- match.arg(how)
+
+    ## `Record()` calls the `read` method for Record classed objects (all helper
+    ## functions call the reader.
+    seek(con, x@offset + 16)
+
+    subrecordBytesRead <- 0
+    subrecords <- list()
+    while (subrecordBytesRead < x@size) {
+      ## Create and read subrecord
+      subrecord <- Subrecord(con, seek(con), how, header(x))
+      subrecords <- c(subrecords, subrecord)
+
+      ## Update tracking variables
+      subrecordBytesRead <- sum(subrecordBytesRead,
+                                4, # NAME
+                                4, # SIZE
+                                subrecord@size)
+    }
+
+    x@subrecords <- subrecords
+    names(x@subrecords) <- sapply(subrecords, \(s) s@name)
+
+    invisible(x)
+  })
+
+  setMethod("read", "Subrecord", function(x, con, how = c("LAZY", "ENUM"), RecordHeader) {
+    how <- match.arg(how)
+
+    if (how == "LAZY") {
+      ## Change the position of the file pointer, and do nothing else.
+      seek(con, x@offset + 8 + x@size)
+      invisible(x)
+    }
+
+    ## Seek to the start of data
+    seek(con, x@offset + 8) # 8 bytes = size of header
+
+    ## getFromNamespace doesn't have a unique error condition.
+    tryCatch({
+      ## Call the appropriate internal data parsing function.
+      parserName <- sprintf("parse%sSubrecordData", x@name)
+      ns <- getNamespace("addamasartus")
+      qc <- substitute(parser <- getFromNamespace(parserName, ns))
+      eval(qc)
+    },
+    condition = function(e) {
+      fmt <- "parse%sSubrecordData is not yet implemented, or was (erroneously)
+  not found in the addamasartus namespace! Error occured while reading %s@%d."
+      msg <- sprintf(fmt, x@name, x@name, x@offset)
+      stop(errorCondition(msg, class = "namespaceError", call = qc))
+    })
+
+    ## Read the binary data of the subrecord and parse it according to x@name.
+    tryCatch({
+      x@data <- parser(con, x, RecordHeader)
+    },
+    error = function(e) {
+      fmt <- "An error (of class %s) occurred while reading or parsing %s (0x%02X; within %s 0x%02X):
+    %s"
+      stop(sprintf(fmt,
+                   class(e),
+                   x@name,
+                   x@offset,
+                   RecordHeader$type,
+                   RecordHeader$offset,
+                   conditionMessage(e)))
+    })
+
+    ## Lazy or not, return the subrecord object if no error occurred.
+    invisible(x)
+  })
+#+end_src
+
+** Parsing ESx records
+
+#+begin_src R :tangle FLTV.R
+  parseFLTVSubrecordData <- function(con, subrecord, parentRecordHeader) {
+    tryCatch({
+      return(list(
+        floatData = readBin(con, "numeric", subrecord@size)
+      ))
+    },
+    error = function(e) {
+      errorCondition("Parse error caught during HEDR subrecord parsing!",
+                     class = "parseError")
+    })
+  }
+#+end_src
+
+#+begin_src R :tangle FNAM.R
+  parseFNAMSubrecordData <- function(con, subrecord, parentRecordHeader) {
+    tryCatch({
+      return(list(
+        globalDataType = rawToChar(readBin(con, "raw", subrecord@size))
+      ))
+    },
+    error = function(e) {
+      errorCondition("Parse error caught during HEDR subrecord parsing!",
+                     class = "parseError")
+    })
+  }
+#+end_src
+
+#+begin_src R :tangle GMDT.R
+  parseGMDTSubrecordData <- function(con, subrecord, parentRecordHeader) {
+    tryCatch({
+      unknownFloats <- readBin(con, "numeric", n = 6, size = 4)
+      cellName <- readBin(con, "raw", n = 64)
+      unknownFloat <- readBin(con, "numeric", n = 1, size = 4)
+      characterName <- readBin(con, "raw", n = 32)
+
+      if (seek(con) - subrecord@offset == subrecord@size) {
+        signalCondition(
+          errorCondition("The number of bytes read was inequal to the specified
+   size of the subrecord.",
+   class = "SubrecordReadError")
+   )
+      }
+
+      return(list(unknownFloats, cellName, unknownFloat, characterName))
+    },
+   error = function(e) {
+     c <- errorCondition("Parser error caught during GMDT subrecord parsing!",
+                         class = "SubrecordParserError")
+     signalCondition(c)
+   })
+  }
+#+end_src
+
+#+begin_src R :tangle HEDR.R
+  parseHEDRSubrecordData <- function(con, subrecord, parentRecordHeader) {
+    tryCatch({
+      ## Parse the components
+      version <- readBin(con, "numeric", n = 1, size = 4, endian = "little")
+      unknown <- readBin(con, "integer", n = 1, size = 4, endian = "little")
+
+      ## Extract strings (removing null terminators)
+      company_name <- gsub("\\0*$", "", rawToChar(readBin(con, "raw", n = 32)))
+      description <- gsub("\\0*$", "", rawToChar(readBin(con, "raw", n = 256)))
+
+      record_count <- readBin(con, "integer", n = 1, size = 4, endian = "little")
+
+      if (0 > record_count) {
+        errorCondition(sprintf("Record count is negative (%d)!", record_count),
+                       class = "TES3HEDRParseError")
+      }
+
+      return(list(
+        version = version,
+        unknown = unknown,
+        company_name = company_name,
+        description = description,
+        record_count = record_count
+      ))
+    },
+    TES3HEDRParseError = \(c) signalCondition(c))
+  }
+#+end_src
+
+#+begin_src R :tangle MAST.R
+  parseMASTSubrecordData <- function(con, subrecord, parentRecordHeader) {
+    tryCatch({
+      return(list(basename = rawToChar(readBin(con, "raw", subrecord@size))))
+    },
+    parseError = function(e) {
+      warning("Parser error caught during MAST subrecord parsing!")
+    })
+  }
+
+  parseDATASubrecordData <- function(con, subrecord, parentRecordHeader) {
+    tryCatch({
+      return(list(bytes = readBin(con, "integer", size = subrecord@size)))
+    },
+    parseError = function(e) {
+      warning("Parser error caught during DATA subrecord parsing!")
+    })
+  }
+
+#+end_src
+
+#+begin_src R :tangle NAME.R
+  parseNAMESubrecordData <- function(rawData, parentRecordHeader) {
+    tryCatch({
+      list(
+        globalID = rawToChar(rawData)
+      )
+    },
+    error = function(e) {
+      errorCondition("Parse error caught during HEDR subrecord parsing!",
+                     class = "parseError")
+    })
+  }
+#+end_src
+
+#+begin_src R :tangle S4ESx.R
+  ## ESX class definition
+  #' @export
+  setClass("ESX",
+           slots = list(path = "fs_path", # Path to the binary file
+                        records = "list"), # List of Record objects
+           prototype = list(path = fs::path(),
+                            records = list()))
+
+  #' @export
+  ESX <- function(filepath, how = "TES3") {
+    ## Open connection and read records
+    con <- file(filepath, "rb")
+    on.exit(close(con))
+
+    return(read(new("ESX", path = filepath, records = list()), con = con, how))
+  }
+
+  ## This only validates the object's file path, nothing else.
+  setValidity("ESX", function(object) {
+    all(ifelse(c(methods::is(object@path, "fs_path"),
+                 fs::file_exists(object@path)),
+               yes = TRUE,
+               no = c(
+                 sprintf("@path must be an fs_path object!", is(object@path)),
+                 sprintf("@path does not exist (%s)!", object@path)
+               )))
+  })
+
+
+  print.Subrecord <- function(x, ...) {
+    if (x@name == "SCRS") {
+      print(paste(x@offset, x@name, x@size))
+    } else {
+      print(x)
+    }
+  }
+
+  ## NOTE: don't print the @array of a SCRS-typed Subrecord.
+  setMethod("print", "Subrecord", function(x, ...) {
+    if (x@name == "SCRS") {
+      print.Subrecord(x, ...)
+    } else {
+      print(x, ...)
+    }
+  })
+#+end_src
+
+#+begin_src R :tangle S4Record.R
+  ## Modified Record class to contain list of Subrecords
+  #' @export
+  setClass("Record",
+           slots = list(
+             offset = "numeric",    # file offset where record begins
+             
+             name = "character",    # 4-byte string
+             size = "numeric",      # uint32
+             flag1 = "numeric",     # uint32
+             flag2 = "numeric",     # uint32
+             subrecords = "list"    # list of Subrecord objects
+           ),
+           prototype = list(
+             name = "TES3",
+             size = 300,
+             flag1 = 0,
+             flag2 = 0,
+             subrecords = list(),
+
+             offset = 0
+           ))
+
+  #' @export
+  Record <- function(con, offset, how, filter) {
+    ## Seek to the record start
+    seek(con, offset)
+
+    record_name <- rawToChar(readBin(con, "raw", n = 4))
+    record_size <- readBin(con, "integer", n = 1, size = 4, endian = "little")
+    record_flag1 <- readBin(con, "integer", n = 1, size = 4, endian = "little")
+    record_flag2 <- readBin(con, "integer", n = 1, size = 4, endian = "little")
+
+    r <- new("Record",
+             name = record_name,
+             size = record_size,
+             flag1 = record_flag1,
+             flag2 = record_flag2,
+             subrecords = list(),
+             offset = offset)
+
+    if (how == "LAZY") {
+      ## Skip the subrecord data for now
+      seek(con, seek(con) + record_size)
+      invisible(r)
+    }
+
+    if (missing(filter)) {
+      invisible(read(r, con = con, "ENUM"))
+    } else if (r@name %in% filter) {
+      invisible(read(r, con = con, "ENUM"))
+    } else {
+      ## NOTE: candidate's subrecords aren't enumerated.
+      seek(con, seek(con) + record_size)
+      invisible(r)
+    }
+  }
+#+end_src
+
+#+begin_src R :tangle S4Subrecord.R
+  ## Define Subrecord class first
+  #' @export
+  setClass("Subrecord",
+           slots = list(
+             offset = "numeric",    # file offset where subrecord begins
+             
+             name = "character",    # 4-byte string
+             size = "numeric",      # uint32
+             data = "list"
+           ),
+           prototype = list(
+             name = "NULL",
+             size = 0,
+             data = list(),
+
+             offset = 0
+           ))
+
+  #' @export
+  Subrecord <- function(con, offset, how, parentRecordHeader) {
+    seek(con, offset)
+    sr_name <- rawToChar(readBin(con, "raw", n = 4))
+    sr_size <- readBin(con, "integer", n = 1, size = 4, endian = "little")
+
+    if (how == "LAZY") {
+      ## Skip the data for now
+      seek(con, seek(con) + sr_size)
+      new("Subrecord",
+          name = sr_name,
+          size = sr_size,
+          data = list(),
+          offset = offset)
+    } else {
+      ## Don't skip the data, read it.
+      new("Subrecord",
+          name = sr_name,
+          size = sr_size,
+          data = list(),
+          offset = offset) |>
+        read(con, how, parentRecordHeader)
+    }
+  }
+#+end_src
+
+#+begin_src R :tangle SCRD.R
+parseSCRDSubrecordData <- function(con, subrecord, parentRecordHeader) {
+  tryCatch({
+    return(list(
+      unknown = readBin(con, "raw", subrecord@size)
+    ))
+  },
+  parseError = function(e) {
+    warning("Parser error caught during SCRD subrecord parsing!")
+  })
+}
+#+end_src
+
+#+begin_src R :tangle SCRS.R
+  #' @name Parse Screenshot (SCRS) subrecord data
+  #' @return a PNG
+  parseSCRSSubrecordData <- function(con, subrecord, parentRecordHeader) {
+    tryCatch({
+      screenshot_bytes <- readBin(con, "raw", subrecord@size)
+      BGR <- matrix(screenshot_bytes, subrecord@size / 4, 4, byrow = TRUE,
+                    dimnames = list(NULL, c("BB", "GG", "RR", "AA")))
+      screenshotArray <- array(c(c(BGR[, 3]),
+                                 c(BGR[, 2]),
+                                 c(BGR[, 1]),
+                                 c(BGR[, 4])),
+                               dim = c(64, 64, 4))
+      ## TODO: utilize imager for very simple image manipulation and
+      ## post-processing.
+      ## screenshot <- imager::as.cimg(screenshotArray)
+
+      return(list("array" = screenshotArray))
+    },
+    parseError = function(e) {
+      warning("Parser error caught during SCRS subrecord parsing!")
+    })
+  }
+
+  ## Translated from the Mopy source code. TODO: prefer using imager or magick
+  ## functions instead, after successful plotting/rendering of the image as it is
+  ## encoded.
+  colourRemap <- function(image) {
+    averageRGB <- mean()
+
+
+    return(apply(image, 2, function(colour) {
+
+      colour <- (colour - averageRGB) * scaleRGB
+      return(max(0, min(255, colour + 128)))
+    }))
+  }
+
+  ## Hand translated from Python 2 from Mopy/mash/mosh.py (https://github.com/polemion/Wrye-Mash-Polemos/blob/dbce232bd053ff8e2c49e6ada85c570f07376d7d/Mopy/mash/mosh.py#L3760-L3782).
+  ## #--Convert bgra array to rgb array
+  ## buff = cStringIO.StringIO()
+  ## for num in xrange(len(subrecord.data)/4):
+  ##     bb,gg,rr = struct.unpack('3B',subrecord.data[num*4:num*4+3])
+  ##     buff.write(struct.pack('3B',rr,gg,bb))
+  ## rgbString = buff.getvalue()
+  ## try: #--Image processing (brighten, increase range)
+  ##     rgbArray = array.array('B',rgbString)
+  ##     rgbAvg   = float(sum(rgbArray))/len(rgbArray)
+  ##     rgbSqAvg = float(sum(xx*xx for xx in rgbArray))/len(rgbArray)
+  ##     rgbSigma = math.sqrt(rgbSqAvg - rgbAvg*rgbAvg)
+  ##     rgbScale = max(1.0,80/rgbSigma)
+  ##     def remap(color):
+  ##         color = color - rgbAvg
+  ##         color = color * rgbScale
+  ##         return max(0,min(255,int(color+128)))
+  ## except: pass
+  ## buff.seek(0)
+  ## try: [buff.write(struct.pack('B',remap(ord(char)))) for num,char in enumerate(rgbString)]
+  ## except: pass
+  ## screenshot = buff.getvalue()
+  ## buff.close()
+  ## break
+#+end_src
+
+#+begin_src R :tangle header.R
+  ## NOTE: used for ESX files, Records, and Subrecords.
+  setGeneric("header", function(x) standardGeneric("header"))
+
+  setMethod("header", "Record", function(x) {
+    return(list(type = x@name,
+                size = x@size,
+                flag1 = x@flag1,
+                flag2 = x@flag2,
+
+                offset = x@offset))
+  })
+
+  setMethod("header", "Subrecord", function(x) {
+    return(list(type = x@name,
+                size = x@size,
+                offset = x@offset))
+  })
+#+end_src
+
+#+begin_src R :tangle parseError.R
+  parseError <- function(name) {
+    msg <- sprintf("The parser parse%sSubrecordData failed during reading.", name)
+    signalCondition(errorCondition(msg, class = "parseError"))
+  }
+#+end_src
+
+* Rendering the S4 ESx object in Shiny
+
+#+begin_src R :tangle shiny.R
+                                          # Helper functions remain the same
+  s4_to_tree <- function(obj_list) {
+    nodes <- lapply(names(obj_list), function(name) {
+      obj <- obj_list[[name]]
+      slots <- slotNames(obj)
+      children <- lapply(slots, function(slot) {
+        slot_value <- slot(obj, slot)
+        if (is.list(slot_value)) {
+          list(
+            text = slot,
+            children = lapply(names(slot_value), function(k) {
+              list(text = paste(k, ":", slot_value[[k]]))
+            })
+          )
+        } else {
+          list(text = paste(slot, ":", slot_value))
+        }
+      })
+
+      list(
+        text = name,
+        children = children
+      )
+    })
+
+    nodes
+  }
+
+  s4_to_graph <- function(obj_list) {
+    nodes <- data.frame()
+    edges <- data.frame()
+    node_id <- 1
+
+    for (name in names(obj_list)) {
+      obj <- obj_list[[name]]
+      class_name <- class(obj)
+
+      main_node <- data.frame(
+        id = node_id,
+        label = paste(name, "\n(", class_name, ")"),
+        group = "main"
+      )
+      nodes <- rbind(nodes, main_node)
+
+      parent_id <- node_id
+      node_id <- node_id + 1
+
+      slots <- slotNames(obj)
+      for (slot in slots) {
+        slot_value <- slot(obj, slot)
+        if (is.list(slot_value)) {
+          for (k in names(slot_value)) {
+            nodes <- rbind(nodes, data.frame(
+                                    id = node_id,
+                                    label = paste(k, ":", slot_value[[k]]),
+                                    group = "detail"
+                                  ))
+            edges <- rbind(edges, data.frame(
+                                    from = parent_id,
+                                    to = node_id
+                                  ))
+            node_id <- node_id + 1
+          }
+        } else {
+          nodes <- rbind(nodes, data.frame(
+                                  id = node_id,
+                                  label = paste(slot, ":", slot_value),
+                                  group = "slot"
+                                ))
+          edges <- rbind(edges, data.frame(
+                                  from = parent_id,
+                                  to = node_id
+                                ))
+          node_id <- node_id + 1
+        }
+      }
+    }
+
+    list(nodes = nodes, edges = edges)
+  }
+
+
+  ## Define the openssl classes we'll be wrapping
+  setOldClass(c("hash", "sha256"))
+
+  ## Define our wrapper class
+  setClass("SHA256Hash",
+           contains = c("hash", "sha256"),
+           prototype = openssl::sha256(raw(0)))
+
+  ## Constructor/helper function
+  SHA256Hash <- function(x) {
+    if (inherits(x, "hash")) {
+      new("SHA256Hash", x)
+    } else if (is.raw(x)) {
+      new("SHA256Hash", openssl::sha256(x))
+    } else if (is.character(x)) {
+      ## If it's a hex string, convert to raw then hash
+      if (nchar(x) == 64 && grepl("^[0-9a-fA-F]+$", x)) {
+        raw_data <- openssl::hex2raw(x)
+        new("SHA256Hash", structure(raw_data, class = c("hash", "sha256")))
+      } else {
+        ## If it's regular text, convert to raw then hash
+        new("SHA256Hash", openssl::sha256(charToRaw(x)))
+      }
+    } else {
+      stop("Input must be a hash object, raw vector, or character string")
+    }
+  }
+
+  setGeneric("show", function(x) standardGeneric("show"))
+  #' @examples
+  #' \dontrun{
+  #' hash1 <- SHA256Hash("test")
+  #' hash2 <- SHA256Hash(charToRaw("test"))
+  #' }
+  #'
+  #' ## The only recommended entry point is the following. The others were
+  #' ## auto-generated by Shiny Assistant.
+  #' hash3 <- SHA256Hash(openssl::sha256("test"))
+  #'
+  #' \dontrun{
+  #' hex_string <-
+  #'   "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+  #' hash4 <- SHA256Hash(hex_string)
+  #' }
+  ## ShinyAssistant, "Inherit openssl methods automatically through contains, but
+  ## we can override or add specific methods if needed."
+  setMethod("show", "SHA256Hash",
+            function(x) {
+              cat("SHA256Hash:", openssl::hex2raw(as.character(x)), "\n")
+            })
+
+  floatingCard <- function(..., title = "Title", subtitle = "Subtitle") {
+    shiny::div(class = "content",
+               shiny::div(class = "floating-container-title header", title),
+               shiny::div(class = "meta", subtitle),
+               shiny::div(class = "description", ...)) %>%
+      shiny.semantic::card() |>
+      shiny::div(class = "floating-container")
+  }
+#+end_src
