@@ -4,8 +4,11 @@ quick way to setup an interactive testing session (if an .Rdata file for such a
 session doesn't already exist).
 
 #+begin_src R
-  cyber.bak <- fs::path("~/src/XBOX/ogxboxBackups/Cyber BACKUP.ess")
+  cyber.bak <- fs::path_home("src", "XBOX", "ogxboxBackups", "Cyber BACKUP.ess")
 #+end_src
+
+#+RESULTS:
+: /var/home/bryce/src/XBOX/ogxboxBackups/Cyber BACKUP.ess
 
 * NexusMods Personal API key
 You can't have mine, but you can put yours in your =.Rprofile= file in your
@@ -20,7 +23,6 @@ and the modders who benefit from the advertisements the Nexus hosts on their
 virtual real estate.
 
 * Addamasartus
-
 Addamasartus is an R package used to parse The Elder Scrolls III: Morrowind
 (hereafter Morrowind) master files, plugin files, and save files. It was born
 out of a need to fix the location of Sharn gra-Muzgob in the Balmora Mage's
@@ -36,11 +38,13 @@ that she will not clip through the walls because of animation issues.
 I am working on this project in my free time to practice "application programming."
 
 ** The ESx reader
-
 Reading ESx files is not too complex. The format is documented well-enough in
-[[file:mw_esm.txt][Dave Humphrey's "mw_esm.txt"]].
+[[file:mw_esm.txt][Dave Humphrey's "mw_esm.txt"]]. An ESS, ESP, or ESM file is read by creating a new
+/ESx object/ with the ~ESX~ function; immediately the ~read~ method of an ESx
+object is called to read the file. See the first ~setMethod~ call in the
+following chunk.
 
-#+begin_src R :noweb :tangle read.R
+#+begin_src R :noweb :tangle R/read.R
   ## NOTE: used for ESX files, Records, and Subrecords.
   setGeneric("read", function(x, con, ...) standardGeneric("read"), signature = "x")
 
@@ -100,7 +104,7 @@ Reading ESx files is not too complex. The format is documented well-enough in
       "INFO"
     )
     filter <- match.arg(filter, record_types, several.ok = TRUE)
-    
+
     ## TODO: when calling this on an existing object.
     ## Open connection and read records
     if (missing(con) && length(x@records) == 1) {
@@ -110,20 +114,20 @@ Reading ESx files is not too complex. The format is documented well-enough in
       con <- file(x@path, "rb")
       on.exit(close(con))
     }
-    
+
     bytes <- as.integer(fs::file_size(x@path))
-    
+
     ## Verify magicka bytes -----
     seek(con, 0)
     maybeTES3 <- try(readBin(con, "raw", n = 4), silent = TRUE)
     if (inherits(maybeTES3, "try-error") || length(maybeTES3) < 4) {
       stop("Erorr reading file connection.")
     }
-    
+
     if (!(rawToChar(maybeTES3) == "TES3")) {
       stop("Not a valid ESX file: Missing TES3 signature")
     }
-    
+
     seek(con, 0)
     TES3 <- Record(con, 0, how = "ENUM", "TES3")
     HEDR <- TES3@subrecords[[1]]
@@ -134,13 +138,13 @@ Reading ESx files is not too complex. The format is documented well-enough in
       records <- vector("list", length = 1 + count)
     }
     records[[1]] <- TES3
-    
+
     if (how != "TES3") {
       recordIndex <- 2
       while (seek(con) < bytes) {
         ## Get current position
         current_pos <- seek(con)
-        
+
         ## Fully read records that are part of a given set, otherwise read lazily.
         if (how == "ENUM" && !missing(filter)) {
           records[[recordIndex]] <- Record(con, current_pos, how, filter)
@@ -149,13 +153,13 @@ Reading ESx files is not too complex. The format is documented well-enough in
    functions do nothing when reading lazily, so the filter is ignored.")
           records[[recordIndex]] <- Record(con, current_pos, how, record_types[-1])
         }
-        
+
         recordIndex <- recordIndex + 1
       }
     }
-    
+
     x@records <- records
-    
+
     return(x)
   })
 
@@ -236,7 +240,7 @@ Reading ESx files is not too complex. The format is documented well-enough in
 
 ** Parsing ESx records
 
-#+begin_src R :tangle FLTV.R
+#+begin_src R :tangle R/FLTV.R
   parseFLTVSubrecordData <- function(con, subrecord, parentRecordHeader) {
     tryCatch({
       return(list(
@@ -250,7 +254,7 @@ Reading ESx files is not too complex. The format is documented well-enough in
   }
 #+end_src
 
-#+begin_src R :tangle FNAM.R
+#+begin_src R :tangle R/FNAM.R
   parseFNAMSubrecordData <- function(con, subrecord, parentRecordHeader) {
     tryCatch({
       return(list(
@@ -264,7 +268,7 @@ Reading ESx files is not too complex. The format is documented well-enough in
   }
 #+end_src
 
-#+begin_src R :tangle GMDT.R
+#+begin_src R :tangle R/GMDT.R
   parseGMDTSubrecordData <- function(con, subrecord, parentRecordHeader) {
     tryCatch({
       unknownFloats <- readBin(con, "numeric", n = 6, size = 4)
@@ -290,7 +294,7 @@ Reading ESx files is not too complex. The format is documented well-enough in
   }
 #+end_src
 
-#+begin_src R :tangle HEDR.R
+#+begin_src R :tangle R/HEDR.R
   parseHEDRSubrecordData <- function(con, subrecord, parentRecordHeader) {
     tryCatch({
       ## Parse the components
@@ -320,7 +324,7 @@ Reading ESx files is not too complex. The format is documented well-enough in
   }
 #+end_src
 
-#+begin_src R :tangle MAST.R
+#+begin_src R :tangle R/MAST.R
   parseMASTSubrecordData <- function(con, subrecord, parentRecordHeader) {
     tryCatch({
       return(list(basename = rawToChar(readBin(con, "raw", subrecord@size))))
@@ -341,7 +345,7 @@ Reading ESx files is not too complex. The format is documented well-enough in
 
 #+end_src
 
-#+begin_src R :tangle NAME.R
+#+begin_src R :tangle R/NAME.R
   parseNAMESubrecordData <- function(rawData, parentRecordHeader) {
     tryCatch({
       list(
@@ -355,7 +359,7 @@ Reading ESx files is not too complex. The format is documented well-enough in
   }
 #+end_src
 
-#+begin_src R :tangle S4ESx.R
+#+begin_src R :tangle R/S4ESx.R
   ## ESX class definition
   #' @export
   setClass("ESX",
@@ -403,13 +407,13 @@ Reading ESx files is not too complex. The format is documented well-enough in
   })
 #+end_src
 
-#+begin_src R :tangle S4Record.R
+#+begin_src R :tangle R/S4Record.R
   ## Modified Record class to contain list of Subrecords
   #' @export
   setClass("Record",
            slots = list(
              offset = "numeric",    # file offset where record begins
-             
+
              name = "character",    # 4-byte string
              size = "numeric",      # uint32
              flag1 = "numeric",     # uint32
@@ -462,13 +466,13 @@ Reading ESx files is not too complex. The format is documented well-enough in
   }
 #+end_src
 
-#+begin_src R :tangle S4Subrecord.R
+#+begin_src R :tangle R/S4Subrecord.R
   ## Define Subrecord class first
   #' @export
   setClass("Subrecord",
            slots = list(
              offset = "numeric",    # file offset where subrecord begins
-             
+
              name = "character",    # 4-byte string
              size = "numeric",      # uint32
              data = "list"
@@ -507,7 +511,7 @@ Reading ESx files is not too complex. The format is documented well-enough in
   }
 #+end_src
 
-#+begin_src R :tangle SCRD.R
+#+begin_src R :tangle R/SCRD.R
 parseSCRDSubrecordData <- function(con, subrecord, parentRecordHeader) {
   tryCatch({
     return(list(
@@ -520,7 +524,7 @@ parseSCRDSubrecordData <- function(con, subrecord, parentRecordHeader) {
 }
 #+end_src
 
-#+begin_src R :tangle SCRS.R
+#+begin_src R :tangle R/SCRS.R
   #' @name Parse Screenshot (SCRS) subrecord data
   #' @return a PNG
   parseSCRSSubrecordData <- function(con, subrecord, parentRecordHeader) {
@@ -584,7 +588,7 @@ parseSCRDSubrecordData <- function(con, subrecord, parentRecordHeader) {
   ## break
 #+end_src
 
-#+begin_src R :tangle header.R
+#+begin_src R :tangle R/header.R
   ## NOTE: used for ESX files, Records, and Subrecords.
   setGeneric("header", function(x) standardGeneric("header"))
 
@@ -604,7 +608,7 @@ parseSCRDSubrecordData <- function(con, subrecord, parentRecordHeader) {
   })
 #+end_src
 
-#+begin_src R :tangle parseError.R
+#+begin_src R :tangle R/parseError.R
   parseError <- function(name) {
     msg <- sprintf("The parser parse%sSubrecordData failed during reading.", name)
     signalCondition(errorCondition(msg, class = "parseError"))
@@ -613,8 +617,8 @@ parseSCRDSubrecordData <- function(con, subrecord, parentRecordHeader) {
 
 * Rendering the S4 ESx object in Shiny
 
-#+begin_src R :tangle shiny.R
-                                          # Helper functions remain the same
+#+begin_src R :tangle R/shiny.R
+  ## Helper functions remain the same
   s4_to_tree <- function(obj_list) {
     nodes <- lapply(names(obj_list), function(name) {
       obj <- obj_list[[name]]
