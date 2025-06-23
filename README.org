@@ -35,20 +35,50 @@ the player character; when the player character is looking at the skull to
 activate this object Sharn will appear nearby her bookshelf, but far enough away
 that she will not clip through the walls because of animation issues.
 
-I am working on this project in my free time to practice "application programming."
+I am working on this project in my free time to practice "application
+programming." The literate paradigm is followed to provide implementation
+documentation so that the API is as useful as possible to others.
 
-** The ESx reader
-Reading ESx files is not too complex. The format is documented well-enough in
+** The ESX reader
+Reading ESX files is not too complex. The format is documented well-enough in
 [[file:mw_esm.txt][Dave Humphrey's "mw_esm.txt"]]. An ESS, ESP, or ESM file is read by creating a new
-/ESx object/ with the ~ESX~ function; immediately the ~read~ method of an ESx
-object is called to read the file. See the first ~setMethod~ call in the
-following chunk.
+/ESX object/ with the ~ESX~ function: in turn, some simple object field
+initialization occurs then the ~read~ method is called. The method reads the
+binary Elder Scrolls file described by the =con= method argument.
 
-#+begin_src R :noweb :tangle R/read.R
+#+begin_src R
+  ## 1. Create an ESX object.
+  ESX(fs::path_home("Saved Games", "Morrowind", "Narevarine", "agronian_guy.ess"))
+#+end_src
+
+ESX files are objects composed of Records, themselves composed of Subrecords.
+
+#+begin_src R :noweb yes :tangle R/read.R
   ## NOTE: used for ESX files, Records, and Subrecords.
   setGeneric("read", function(x, con, ...) standardGeneric("read"), signature = "x")
 
-  #' @param parsing_method dictactes *how* the ESX file is parsed. This argument
+  <<ESX.read File>>
+  <<ESX.read Record>>
+  <<ESX.read Subrecord>>
+#+end_src
+
+The composition is read "lazily", only reading the TES3 header Record at first,
+and subsequent calls to the read method on an ESX object will either "enumerate"
+the rest of the records (parsing them immediately), or read the records "lazily"
+(only reading the headers of the records).
+
+See the first ~setMethod~ call in the following chunk for /what the ~read~
+method of the =ESX= class/ does. The method is called with the following arguments:
+
+- con :: an fs_path created from the input string.
+- parsing_method :: =TES3=, so only the TES3 header of the Elder Scrolls file is
+  enumerated; enumeration of records ceases after reading the TES3 record to
+  minimize up-front effort.
+- filter :: =TES3=, only records matching this name are parsed, other records
+  are only enumerated.
+
+#+begin_src R :noweb-ref "ESX.read File"
+  #' @param how dictactes *how* the ESX file is parsed. This argument
   #'   is an additional parameter to the generic read method, and when reading
   #'   this argument is passed onward as appropriate. "TES3" causes the reader to
   #'   only parse the TES3 record (which is always parsed fully), and then return.
@@ -56,9 +86,9 @@ following chunk.
   #'   the headers of the subrecords of all records in addition to the normal
   #'   reading of record headers.
   #' @param filter a vector of record names to fully enumerate; all other record
-  #'   types are unparsed (reding only their header).
-  setMethod("read", "ESX", function(x, con, parsing_method = c("TES3", "ENUM", "LAZY"), filter = "TES3") {
-    parsing_method <- match.arg(parsing_method) # signal an error if no matching argument.
+  #'   types are unparsed (reading only their header).
+  setMethod("read", "ESX", function(x, con, how = c("TES3", "ENUM", "LAZY"), filter = "TES3") {
+    how <- match.arg(how) # signal an error if no matching argument.
     record_types <- c(
       "TES3",
       "GMST",
@@ -121,7 +151,7 @@ following chunk.
     seek(con, 0)
     maybeTES3 <- try(readBin(con, "raw", n = 4), silent = TRUE)
     if (inherits(maybeTES3, "try-error") || length(maybeTES3) < 4) {
-      stop("Erorr reading file connection.")
+      stop("Error reading from file connection, or less than four bytes were read.")
     }
 
     if (!(rawToChar(maybeTES3) == "TES3")) {
@@ -158,11 +188,16 @@ following chunk.
       }
     }
 
+    ## names(records[[1]]) <- "TES3"
+    ## Error in names(records[[1]]) <- "TES3" (from read.R#114) :
+    ##   invalid to use names()<- on an S4 object of class 'Record'
     x@records <- records
 
-    return(x)
+    invisible(x)
   })
+#+end_src
 
+#+begin_src R :noweb-ref "ESX.read Record"
   setMethod("read", "Record", function(x, con, how = c("LAZY", "ENUM")) {
     how <- match.arg(how)
 
@@ -189,7 +224,16 @@ following chunk.
 
     invisible(x)
   })
+#+end_src
 
+** Dispatching to ESX Record-parsing methods using metaprogramming
+Metaprogramming is used to look at what parsing methods exist; if a method
+doesn't exist for a given record type an error is returned. This allows for an
+iterative development process, and as more parsing methods are written during a
+development session existing objects benefit from the use of metaprogramming
+(called reflection in Java and some other languages).
+
+#+begin_src R :noweb-ref "ESX.read Subrecord"
   setMethod("read", "Subrecord", function(x, con, how = c("LAZY", "ENUM"), RecordHeader) {
     how <- match.arg(how)
 
@@ -238,7 +282,10 @@ following chunk.
   })
 #+end_src
 
-** Parsing ESx records
+** ESX Record Parsing Methods
+Record parsing functions are defined herein.
+
+Float values are stored specially.
 
 #+begin_src R :tangle R/FLTV.R
   parseFLTVSubrecordData <- function(con, subrecord, parentRecordHeader) {
@@ -254,6 +301,8 @@ following chunk.
   }
 #+end_src
 
+Faction names.
+
 #+begin_src R :tangle R/FNAM.R
   parseFNAMSubrecordData <- function(con, subrecord, parentRecordHeader) {
     tryCatch({
@@ -267,6 +316,8 @@ following chunk.
     })
   }
 #+end_src
+
+Game data.
 
 #+begin_src R :tangle R/GMDT.R
   parseGMDTSubrecordData <- function(con, subrecord, parentRecordHeader) {
@@ -293,6 +344,8 @@ following chunk.
    })
   }
 #+end_src
+
+HEDR subrecord, a special subrecord used only in the TES3 record type.
 
 #+begin_src R :tangle R/HEDR.R
   parseHEDRSubrecordData <- function(con, subrecord, parentRecordHeader) {
@@ -323,6 +376,8 @@ following chunk.
     TES3HEDRParseError = \(c) signalCondition(c))
   }
 #+end_src
+
+MAST subrecord, a special subrecord used only in the TES3 record type.
 
 #+begin_src R :tangle R/MAST.R
   parseMASTSubrecordData <- function(con, subrecord, parentRecordHeader) {
@@ -359,7 +414,7 @@ following chunk.
   }
 #+end_src
 
-#+begin_src R :tangle R/S4ESx.R
+#+begin_src R :tangle R/S4ESX.R
   ## ESX class definition
   #' @export
   setClass("ESX",
@@ -388,22 +443,43 @@ following chunk.
                )))
   })
 
+  print.ESX <- function(x, ...) {
+    requireNamespace("cli")
 
-  print.Subrecord <- function(x, ...) {
-    if (x@name == "SCRS") {
-      print(paste(x@offset, x@name, x@size))
-    } else {
-      print(x)
+    cli::cli_h1("ESX @ {.path {x@path}}")
+    for (r in x@records) {
+      cli::cli_h2("Record '{r@name}")
+      cli::cli_bullets(c("*" = "Offset = {r@offset}",
+                         "*" = "Size (bytes) = {r@size}"))
+      print(r)
     }
   }
 
-  ## NOTE: don't print the @array of a SCRS-typed Subrecord.
-  setMethod("print", "Subrecord", function(x, ...) {
-    if (x@name == "SCRS") {
-      print.Subrecord(x, ...)
-    } else {
-      print(x, ...)
+  setMethod("print", "ESX", function(x, ...) {
+    print.ESX(x, ...)
+  })
+
+  print.Record <- function(x, ...) {
+    for (sr in x@subrecords) {
+      print(sr)
     }
+  }
+
+  setMethod("print", "Record", function(x, ...) {
+    print.Record(x, ...)
+  })
+
+  print.Subrecord <- function(x, ...) {
+    if (x@name == "SCRS") {
+      ## NOTE: don't print the @array of a SCRS-typed Subrecord.
+      print(paste(x@offset, x@name, x@size))
+    } else {
+      print.default(x)
+    }
+  }
+
+  setMethod("print", "Subrecord", function(x, ...) {
+      print.Subrecord(x, ...)
   })
 #+end_src
 
@@ -524,6 +600,8 @@ parseSCRDSubrecordData <- function(con, subrecord, parentRecordHeader) {
 }
 #+end_src
 
+Screenshot record data.
+
 #+begin_src R :tangle R/SCRS.R
   #' @name Parse Screenshot (SCRS) subrecord data
   #' @return a PNG
@@ -608,6 +686,8 @@ parseSCRDSubrecordData <- function(con, subrecord, parentRecordHeader) {
   })
 #+end_src
 
+A parser error messaging helper function.
+
 #+begin_src R :tangle R/parseError.R
   parseError <- function(name) {
     msg <- sprintf("The parser parse%sSubrecordData failed during reading.", name)
@@ -615,7 +695,17 @@ parseSCRDSubrecordData <- function(con, subrecord, parentRecordHeader) {
   }
 #+end_src
 
-* Rendering the S4 ESx object in Shiny
+* Demonstration Shiny application
+The Addamasartus package provides an API for interacting with ESS, ESP, and ESM
+files for TES III: Morrowind. This demonstration Shiny application utilizes the
+API to create an application for viewing the S4 *ESX* object created from
+parsing an Elder Scrolls file. The view of the object is either a tree or a
+graph. The code was initially AI-generated, using Shiny Assistant. Once
+frustration with the AI reached a maximum the code was exported and hand-written
+therefrom.
+
+This demonstration application is incomplete and will probably be deleted in
+favour of a simpler GUI approach utilizing Tcl/Tk.
 
 #+begin_src R :tangle R/shiny.R
   ## Helper functions remain the same
@@ -760,3 +850,4 @@ parseSCRDSubrecordData <- function(con, subrecord, parentRecordHeader) {
       shiny::div(class = "floating-container")
   }
 #+end_src
+
